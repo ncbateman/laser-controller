@@ -1,71 +1,177 @@
-import fastapi
-from fastapi import APIRouter, HTTPException
+import serial
 
-from api.schemas.calibration import CalibrationRequest, CalibrationResponse, AxisCalibrationResponse
+import fastapi
+from fastapi import APIRouter
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import Request
+
+from api.schemas.calibration import AxisCalibrationResponse
+from api.schemas.calibration import CalibrationRequest
+from api.schemas.calibration import CalibrationResponse
 from api.services import calibration
 
+def get_grbl_connection(request: Request) -> serial.Serial:
+    """
+    Get GRBL serial connection from application state.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        GRBL serial connection
+
+    Raises:
+        HTTPException: 503 if GRBL connection is not available
+    """
+    if not hasattr(request.app.state, 'grbl_connection'):
+        raise HTTPException(status_code=503, detail="GRBL connection not available")
+    return request.app.state.grbl_connection.serial
+
+def get_limit_connection(request: Request) -> serial.Serial:
+    """
+    Get limit controller serial connection from application state.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Limit controller serial connection
+
+    Raises:
+        HTTPException: 503 if limit connection is not available
+    """
+    if not hasattr(request.app.state, 'limit_connection'):
+        raise HTTPException(status_code=503, detail="Limit controller connection not available")
+    return request.app.state.limit_connection.serial
+
+async def home_all_endpoint(
+    request: CalibrationRequest,
+    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    limit_ser: serial.Serial = Depends(get_limit_connection)
+) -> CalibrationResponse:
+    """
+    Run full calibration sequence: Y axis first, then X axis.
+    Sets center as origin (0,0,0) after calibration.
+    Optionally outlines the workspace border.
+
+    Args:
+        request: CalibrationRequest containing outline option
+        grbl_ser: GRBL serial connection
+        limit_ser: Limit controller serial connection
+
+    Returns:
+        CalibrationResponse with calibration status and axis lengths
+
+    Raises:
+        HTTPException: 500 if calibration fails, 503 if connections unavailable
+    """
+    try:
+        result = calibration.home_all(grbl_ser, limit_ser, outline=request.outline)
+        return CalibrationResponse(
+            status=result["status"],
+            message=result["message"],
+            x_axis_length=result.get("x_axis_length"),
+            y_axis_length=result.get("y_axis_length")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def home_x_endpoint(
+    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    limit_ser: serial.Serial = Depends(get_limit_connection)
+) -> AxisCalibrationResponse:
+    """
+    Calibrate X axis using two-pass homing with calibration.
+
+    Args:
+        grbl_ser: GRBL serial connection
+        limit_ser: Limit controller serial connection
+
+    Returns:
+        AxisCalibrationResponse with X axis calibration results
+
+    Raises:
+        HTTPException: 500 if calibration fails, 503 if connections unavailable
+    """
+    try:
+        result = calibration.home_x_axis_fast(grbl_ser, limit_ser)
+        return AxisCalibrationResponse(
+            status=result["status"],
+            message="X axis calibration complete",
+            axis=result["axis"],
+            measured_length=result.get("measured_length"),
+            known_length=291.0,
+            steps_per_mm=result.get("steps_per_mm")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def home_y_endpoint(
+    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    limit_ser: serial.Serial = Depends(get_limit_connection)
+) -> AxisCalibrationResponse:
+    """
+    Calibrate Y axis using two-pass homing with calibration.
+    Moves both Y and Z together (dual motor Y axis).
+
+    Args:
+        grbl_ser: GRBL serial connection
+        limit_ser: Limit controller serial connection
+
+    Returns:
+        AxisCalibrationResponse with Y axis calibration results
+
+    Raises:
+        HTTPException: 500 if calibration fails, 503 if connections unavailable
+    """
+    try:
+        result = calibration.home_y_axis_fast(grbl_ser, limit_ser)
+        return AxisCalibrationResponse(
+            status=result["status"],
+            message="Y axis calibration complete",
+            axis=result["axis"],
+            measured_length=result.get("measured_length"),
+            known_length=899.0,
+            steps_per_mm=result.get("steps_per_mm")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 def factory(app: fastapi.FastAPI) -> APIRouter:
+    """
+    Create and configure the calibration API router with all calibration endpoints.
+
+    Args:
+        app: FastAPI application instance
+
+    Returns:
+        Configured APIRouter with calibration endpoints:
+        - POST /calibration/home-all - Full calibration (Y then X)
+        - POST /calibration/home-x - X axis calibration only
+        - POST /calibration/home-y - Y axis calibration only
+    """
     router = APIRouter(prefix="/calibration", tags=["calibration"])
 
-    @router.post("/home-all", response_model=CalibrationResponse)
-    async def home_all_endpoint(request: CalibrationRequest):
-        """
-        Run full calibration sequence: Y axis first, then X axis.
-        Sets center as origin (0,0,0) after calibration.
-        Optionally outlines the workspace border.
-        """
-        try:
-            grbl_ser = app.state.grbl_connection.serial
-            limit_ser = app.state.limit_connection.serial
-            result = calibration.home_all(grbl_ser, limit_ser, outline=request.outline)
-            return CalibrationResponse(
-                status=result["status"],
-                message=result["message"],
-                x_axis_length=result.get("x_axis_length"),
-                y_axis_length=result.get("y_axis_length")
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    router.add_api_route(
+        "/home-all",
+        home_all_endpoint,
+        methods=["POST"],
+        response_model=CalibrationResponse
+    )
 
-    @router.post("/home-x", response_model=AxisCalibrationResponse)
-    async def home_x_endpoint():
-        """
-        Calibrate X axis using two-pass homing with calibration.
-        """
-        try:
-            grbl_ser = app.state.grbl_connection.serial
-            limit_ser = app.state.limit_connection.serial
-            result = calibration.home_x_axis_fast(grbl_ser, limit_ser)
-            return AxisCalibrationResponse(
-                status=result["status"],
-                message="X axis calibration complete",
-                axis=result["axis"],
-                measured_length=result.get("measured_length"),
-                known_length=291.0,
-                steps_per_mm=result.get("steps_per_mm")
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    router.add_api_route(
+        "/home-x",
+        home_x_endpoint,
+        methods=["POST"],
+        response_model=AxisCalibrationResponse
+    )
 
-    @router.post("/home-y", response_model=AxisCalibrationResponse)
-    async def home_y_endpoint():
-        """
-        Calibrate Y axis using two-pass homing with calibration.
-        Moves both Y and Z together (dual motor Y axis).
-        """
-        try:
-            grbl_ser = app.state.grbl_connection.serial
-            limit_ser = app.state.limit_connection.serial
-            result = calibration.home_y_axis_fast(grbl_ser, limit_ser)
-            return AxisCalibrationResponse(
-                status=result["status"],
-                message="Y axis calibration complete",
-                axis=result["axis"],
-                measured_length=result.get("measured_length"),
-                known_length=899.0,
-                steps_per_mm=result.get("steps_per_mm")
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    router.add_api_route(
+        "/home-y",
+        home_y_endpoint,
+        methods=["POST"],
+        response_model=AxisCalibrationResponse
+    )
 
     return router
