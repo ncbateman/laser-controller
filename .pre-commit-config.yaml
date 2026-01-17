@@ -21,4 +21,12 @@ repos:
         types: [python]
         pass_filenames: false
         always_run: true
-        args: ["tests/", "-v"]
+        args: ["tests/", "-v", "--cov=src/api", "--cov-branch", "--cov-report=xml"]
+      - id: update-readme-coverage
+        name: update-readme-coverage
+        entry: .venv/bin/python
+        language: system
+        types: [python]
+        pass_filenames: false
+        always_run: true
+        args: ["scripts/update_readme_coverage.py", "README.md", "coverage.xml"]

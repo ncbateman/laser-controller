@@ -80,3 +80,17 @@ The `src/` directory is mounted as a volume, so code changes are reflected immed
 - `GET /health/` - Health check endpoint
 
 _More endpoints will be added as the API is developed._
+
+## Tests
+
+**Overall Coverage:** 22.5% (Lines) | 0.0% (Branches)
+
+### Coverage by Module
+
+| Module | Lines | Branches |
+|--------|-------|----------|
+| `.` | 14.3% | 0.0% |
+| `modules` | 11.8% | 0.0% |
+| `routers` | 59.6% | 0.0% |
+| `schemas` | 85.8% | 0.0% |
+| `services` | 4.8% | 0.0% |

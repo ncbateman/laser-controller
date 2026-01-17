@@ -1,3 +1,4 @@
+import subprocess
 import xml.etree.ElementTree as ET
 import sys
 import re
@@ -34,23 +35,31 @@ def generate_coverage_table(coverage_xml_path='coverage.xml'):
 
     return markdown
 
+def normalize_content(content: str) -> str:
+    """Normalize content for comparison - ensure it ends with exactly one newline."""
+    return content.rstrip() + '\n'
+
 def update_readme(readme_path='README.md', coverage_xml_path='coverage.xml'):
     with open(readme_path, 'r') as f:
-        content = f.read()
+        original_content = f.read()
 
     coverage_table = generate_coverage_table(coverage_xml_path)
 
-    if re.search(r'^## Tests\b', content, re.MULTILINE):
+    if re.search(r'^## Tests\b', original_content, re.MULTILINE):
         pattern = r'(^## Tests\b.*?)(?=^## |\Z)'
-        replacement = coverage_table.rstrip() + '\n\n'
-        content = re.sub(pattern, replacement, content, flags=re.MULTILINE | re.DOTALL)
+        replacement = coverage_table.rstrip() + '\n'
+        new_content = re.sub(pattern, replacement, original_content, flags=re.MULTILINE | re.DOTALL)
     else:
-        if not content.endswith('\n'):
-            content += '\n'
-        content += '\n' + coverage_table
+        content = original_content.rstrip()
+        new_content = content + '\n\n' + coverage_table.rstrip() + '\n'
 
-    with open(readme_path, 'w') as f:
-        f.write(content)
+    new_content = normalize_content(new_content)
+    original_normalized = normalize_content(original_content)
+
+    if new_content != original_normalized:
+        with open(readme_path, 'w') as f:
+            f.write(new_content)
+        subprocess.run(['git', 'add', readme_path], check=False)
 
 if __name__ == '__main__':
     readme_path = sys.argv[1] if len(sys.argv) > 1 else 'README.md'
