@@ -24,6 +24,7 @@ from loguru import logger
 
 from api.modules import grbl
 from api.modules import limits
+from api.schemas import grbl as grbl_schemas
 
 
 def query_grbl_position(grbl_ser: serial.Serial) -> dict[str, float | str | None]:
@@ -70,16 +71,14 @@ def move_until_limit_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial, dir
     """
     logger.info(f"Moving {direction} until switch {switch_id} is pressed (max {max_distance}mm at F{feed})...")
 
-    if direction == "+":
-        command = f"G1 X{max_distance} F{feed}\n"
-    else:
-        command = f"G1 X-{max_distance} F{feed}\n"
-
     limit_ser.timeout = 0.01
     limit_ser.reset_input_buffer()
 
     grbl_ser.reset_input_buffer()
-    grbl_ser.write(command.encode())
+    if direction == "+":
+        grbl.move_relative(grbl_ser, x=max_distance, feed=feed)
+    else:
+        grbl.move_relative(grbl_ser, x=-max_distance, feed=feed)
     start_time = time.time()
 
     while True:
@@ -89,14 +88,13 @@ def move_until_limit_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial, dir
             elapsed = time.time() - start_time
             distance = (elapsed * feed) / 60.0
             logger.info(f"Switch {switch_id} pressed after {elapsed:.2f}s (~{distance:.1f}mm), stopping...")
-            grbl_ser.write(b"!")
+            grbl.feed_hold(grbl_ser)
             time.sleep(0.1)
-            grbl_ser.write(b"\x18")
-            time.sleep(1)
+            grbl.reset_grbl(grbl_ser)
             grbl_ser.reset_input_buffer()
-            grbl_ser.write(b'$X\n')
+            grbl.unlock_alarm(grbl_ser)
             time.sleep(0.1)
-            grbl_ser.write(b'$1=255\n')
+            grbl.set_setting(grbl_ser, 1, 255)
             time.sleep(0.1)
             grbl_ser.read_all()
             return True, grbl_ser, distance
@@ -109,16 +107,14 @@ def move_until_limit_fast_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, d
     """
     logger.info(f"Moving Y+Z {direction} until switches {switch_ids} pressed (max {max_distance}mm at F{feed})...")
 
-    if direction == "+":
-        command = f"G1 Y{max_distance} Z{max_distance} F{feed}\n"
-    else:
-        command = f"G1 Y-{max_distance} Z-{max_distance} F{feed}\n"
-
     limit_ser.timeout = 0.01
     limit_ser.reset_input_buffer()
 
     grbl_ser.reset_input_buffer()
-    grbl_ser.write(command.encode())
+    if direction == "+":
+        grbl.move_relative(grbl_ser, y=max_distance, feed=feed)
+    else:
+        grbl.move_relative(grbl_ser, y=-max_distance, feed=feed)
     start_time = time.time()
 
     while True:
@@ -128,14 +124,13 @@ def move_until_limit_fast_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, d
             distance = (elapsed * feed) / 60.0
             logger.info(f"Switch {pressed_switch_id} pressed after {elapsed:.2f}s (~{distance:.1f}mm), stopping...")
 
-            grbl_ser.write(b"!")
+            grbl.feed_hold(grbl_ser)
             time.sleep(0.1)
-            grbl_ser.write(b"\x18")
-            time.sleep(1)
+            grbl.reset_grbl(grbl_ser)
             grbl_ser.reset_input_buffer()
-            grbl_ser.write(b'$X\n')
+            grbl.unlock_alarm(grbl_ser)
             time.sleep(0.1)
-            grbl_ser.write(b'$1=255\n')
+            grbl.set_setting(grbl_ser, 1, 255)
             time.sleep(0.1)
             grbl_ser.read_all()
 
@@ -158,13 +153,11 @@ def move_until_limit_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, direct
             logger.info(f"Switch {pressed_switch_id} pressed, stopping")
             return True, distance_traveled
 
-        if direction == "+":
-            command = f"G1 Y{step_size} Z{step_size} F{feed}\n"
-        else:
-            command = f"G1 Y-{step_size} Z-{step_size} F{feed}\n"
-
         grbl_ser.reset_input_buffer()
-        grbl_ser.write(command.encode())
+        if direction == "+":
+            grbl.move_relative(grbl_ser, y=step_size, feed=feed)
+        else:
+            grbl.move_relative(grbl_ser, y=-step_size, feed=feed)
         distance_traveled += step_size
 
         deadline = time.time() + 2.0
@@ -182,12 +175,12 @@ def move_until_limit_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, direct
 
         time.sleep(move_time)
 
-def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[str, float | str]:
+def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: serial.Serial) -> dict[str, float | str]:
     """
     Two-pass X axis homing with calibration.
 
     Args:
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
     Returns:
@@ -203,13 +196,13 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
     try:
 
         logger.info("Locking motors...")
-        grbl_ser.write(b'$1=255\n')
+        grbl.set_setting(grbl_ser, 1, 255)
         time.sleep(0.2)
         grbl_ser.read_all()
 
         logger.info("=== PASS 1: ROUGH SEEK (with resets) ===")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -218,7 +211,7 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         if not success:
             raise RuntimeError("Failed to reach first limit")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -229,13 +222,13 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
 
         logger.info(f"Rough axis length: ~{rough_distance:.1f}mm")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
         rough_center = rough_distance / 2.0
         logger.info(f"Moving to rough center ({rough_center:.1f}mm)...")
-        grbl_ser.write(f'G1 X{rough_center} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, x=rough_center, feed=20000)
         move_time = (rough_center / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -244,7 +237,7 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
 
         fast_approach = rough_center - safety_margin
         logger.info(f"Fast approach to first limit ({fast_approach:.1f}mm)...")
-        grbl_ser.write(f'G1 X{fast_approach} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, x=fast_approach, feed=20000)
         move_time = (fast_approach / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -259,7 +252,7 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
 
         return_distance = dist_to_limit_1 + fast_approach
         logger.info(f"Moving toward second limit ({return_distance:.1f}mm)...")
-        grbl_ser.write(f'G1 X-{return_distance} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, x=-return_distance, feed=20000)
         move_time = (return_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -275,18 +268,7 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.info(f"Known axis length: {known_axis_length:.2f}mm")
 
         logger.info("=== CALIBRATION ===")
-        grbl_ser.write(b'$$\n')
-        time.sleep(0.3)
-        settings = grbl_ser.read_all().decode("utf-8", errors="ignore")
-
-        current_steps = 250.0
-        for line in settings.split('\n'):
-            if line.startswith('$100='):
-                try:
-                    current_steps = float(line.split('=')[1].split('(')[0].strip())
-                except ValueError:
-                    pass
-                break
+        current_steps = grbl.get_setting(grbl_connection, 100) or 250.0
 
         logger.info(f"Current X steps/mm: {current_steps}")
 
@@ -295,7 +277,7 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.info(f"Correction factor: {correction_factor:.4f}")
         logger.info(f"New X steps/mm: {new_steps:.3f}")
 
-        grbl_ser.write(f'$100={new_steps:.3f}\n'.encode())
+        grbl.set_setting(grbl_ser, 100, new_steps, connection=grbl_connection)
         time.sleep(0.2)
         grbl_ser.read_all()
         logger.info("Calibration applied")
@@ -303,16 +285,16 @@ def home_x_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         center_distance = known_axis_length / 2.0
         logger.info(f"Moving to center ({center_distance:.2f}mm)...")
 
-        grbl_ser.write(f'G1 X{center_distance} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, x=center_distance, feed=20000)
         move_time = (center_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
 
-        grbl_ser.write(b'$1=25\n')
+        grbl.set_setting(grbl_ser, 1, 25, connection=grbl_connection)
         time.sleep(0.2)
         grbl_ser.read_all()
 
-        grbl_ser.write(b'G90\n')
+        grbl.set_mode_absolute(grbl_ser)
         time.sleep(0.2)
 
         logger.info(f"X axis homing complete. Calibrated axis length: {known_axis_length:.2f}mm")
@@ -347,9 +329,11 @@ def move_until_limit(grbl_ser: serial.Serial, limit_ser: serial.Serial, directio
             logger.info(f"Switch {switch_id} already pressed, stopping")
             return True, distance_traveled
 
-        command = f"G1 X{direction}{step_size} F{feed}\n"
         grbl_ser.reset_input_buffer()
-        grbl_ser.write(command.encode())
+        if direction == "+":
+            grbl.move_relative(grbl_ser, x=step_size, feed=feed)
+        else:
+            grbl.move_relative(grbl_ser, x=-step_size, feed=feed)
         distance_traveled += step_size
 
         deadline = time.time() + 2.0
@@ -373,13 +357,13 @@ def move_until_limit(grbl_ser: serial.Serial, limit_ser: serial.Serial, directio
             logger.info(f"Switch {switch_id} pressed, stopping")
             return True, distance_traveled
 
-def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[str, float | str]:
+def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: serial.Serial) -> dict[str, float | str]:
     """
     Two-pass Y axis homing with calibration.
     Moves both Y and Z together (dual motor Y axis).
 
     Args:
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
     Returns:
@@ -395,7 +379,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
     try:
 
         logger.info("Locking motors...")
-        grbl_ser.write(b'$1=255\n')
+        grbl.set_setting(grbl_ser, 1, 255)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -404,7 +388,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         pos_before = query_grbl_position(grbl_ser)
         logger.debug(f"Initial position: X={pos_before['x']}, Y={pos_before['y']}, Z={pos_before['z']}")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -417,7 +401,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.debug(f"After limit 1: Y={pos_after_limit_1['y']}, Z={pos_after_limit_1['z']}")
         logger.debug(f"Distance traveled to limit 1: {dist_to_limit_1:.2f}mm")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -441,7 +425,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
 
         logger.info(f"Rough axis length: ~{rough_distance:.1f}mm")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -458,7 +442,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
             rough_center = rough_distance / 2.0
 
         logger.info(f"Moving to rough center ({rough_center:.1f}mm in + direction)...")
-        grbl_ser.write(f'G1 Y{rough_center} Z{rough_center} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, y=rough_center, feed=20000)
         move_time = (rough_center / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -482,7 +466,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
                 fast_approach = rough_center - safety_margin
 
         logger.info(f"Fast approach to first limit ({fast_approach:.1f}mm)...")
-        grbl_ser.write(f'G1 Y{fast_approach} Z{fast_approach} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, y=fast_approach, feed=20000)
         move_time = (abs(fast_approach) / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -509,7 +493,7 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
             return_distance = dist_to_limit_1_from_center + dist_to_limit_1_from_center
 
         logger.info(f"Moving toward second limit ({return_distance:.1f}mm)...")
-        grbl_ser.write(f'G1 Y-{return_distance} Z-{return_distance} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, y=-return_distance, feed=20000)
         move_time = (return_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -531,23 +515,8 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.info(f"Known axis length: {known_axis_length:.2f}mm")
 
         logger.info("=== CALIBRATION ===")
-        grbl_ser.write(b'$$\n')
-        time.sleep(0.3)
-        settings = grbl_ser.read_all().decode("utf-8", errors="ignore")
-
-        current_steps_y = 40.0
-        current_steps_z = 40.0
-        for line in settings.split('\n'):
-            if line.startswith('$101='):
-                try:
-                    current_steps_y = float(line.split('=')[1].split('(')[0].strip())
-                except ValueError:
-                    pass
-            if line.startswith('$102='):
-                try:
-                    current_steps_z = float(line.split('=')[1].split('(')[0].strip())
-                except ValueError:
-                    pass
+        current_steps_y = grbl.get_setting(grbl_connection, 101) or 40.0
+        current_steps_z = grbl.get_setting(grbl_connection, 102) or 40.0
 
         logger.info(f"Current Y steps/mm: {current_steps_y}")
         logger.info(f"Current Z steps/mm: {current_steps_z}")
@@ -559,9 +528,9 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.info(f"New Y steps/mm: {new_steps_y:.3f}")
         logger.info(f"New Z steps/mm: {new_steps_z:.3f}")
 
-        grbl_ser.write(f'$101={new_steps_y:.3f}\n'.encode())
+        grbl.set_setting(grbl_ser, 101, new_steps_y, connection=grbl_connection)
         time.sleep(0.2)
-        grbl_ser.write(f'$102={new_steps_z:.3f}\n'.encode())
+        grbl.set_setting(grbl_ser, 102, new_steps_z, connection=grbl_connection)
         time.sleep(0.2)
         grbl_ser.read_all()
         logger.info("Calibration applied")
@@ -580,22 +549,22 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
 
         logger.info(f"Moving to center ({center_distance:.2f}mm)...")
 
-        grbl_ser.write(b'G91\n')
+        grbl.set_mode_relative(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
-        grbl_ser.write(f'G1 Y{center_distance} Z{center_distance} F20000\n'.encode())
+        grbl.move_relative(grbl_ser, y=center_distance, feed=20000)
         move_time = (abs(center_distance) / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
 
         pos_after_final_center = query_grbl_position(grbl_ser)
 
-        grbl_ser.write(b'$1=25\n')
+        grbl.set_setting(grbl_ser, 1, 25, connection=grbl_connection)
         time.sleep(0.2)
         grbl_ser.read_all()
 
-        grbl_ser.write(b'G90\n')
+        grbl.set_mode_absolute(grbl_ser)
         time.sleep(0.2)
 
         logger.info(f"Y axis homing complete. Calibrated axis length: {known_axis_length:.2f}mm")
@@ -612,44 +581,43 @@ def home_y_axis_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial) -> dict[
         logger.error(f"Y axis homing failed: {e}")
         raise
 
-def home_all(grbl_ser: serial.Serial, limit_ser: serial.Serial, outline: bool = True) -> dict[str, str | float | None]:
+def home_all(grbl_connection: grbl_schemas.GrblConnection, limit_ser: serial.Serial, outline: bool = True) -> dict[str, str | float | None]:
     """
     Run full calibration sequence: Y axis first, then X axis.
     Sets center as origin (0,0,0) after calibration.
     Optionally outlines the workspace border.
 
     Args:
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
         outline: Whether to outline workspace after calibration
 
     Returns:
         Dict with calibration results
     """
+    grbl_ser = grbl_connection.serial
     x_axis_length = 291.0
     y_axis_length = 899.0
 
     try:
         logger.info("=== Starting full calibration sequence ===")
         logger.info("Step 1/2: Calibrating Y axis...")
-        y_result = home_y_axis_fast(grbl_ser, limit_ser)
+        y_result = home_y_axis_fast(grbl_connection, limit_ser)
         logger.info("\nStep 2/2: Calibrating X axis...")
-        x_result = home_x_axis_fast(grbl_ser, limit_ser)
+        x_result = home_x_axis_fast(grbl_connection, limit_ser)
 
         logger.info("\n=== Setting center as origin (0,0,0) ===")
 
-        grbl_ser.write(b'\r\n\r\n')
-        time.sleep(1)
-        grbl_ser.read_all()
+        grbl.initialize_connection(grbl_ser)
 
-        grbl_ser.write(b'G90\n')
+        grbl.set_mode_absolute(grbl_ser)
         time.sleep(0.2)
         grbl_ser.read_all()
 
         pos = query_grbl_position(grbl_ser)
         logger.info(f"Current position: X={pos['x']}, Y={pos['y']}, Z={pos['z']}")
 
-        grbl_ser.write(b'G92 X0 Y0 Z0\n')
+        grbl.set_work_coordinate_offset(grbl_ser, x=0, y=0)
         time.sleep(0.2)
         grbl_ser.read_all()
         logger.info("Center set as origin (0,0,0)")
@@ -671,7 +639,7 @@ def home_all(grbl_ser: serial.Serial, limit_ser: serial.Serial, outline: bool = 
         logger.error(f"Full calibration failed: {e}")
         raise
 
-def outline_workspace(grbl_ser: serial.Serial, x_length: float, y_length: float, margin: float = 10.0, feed: int = 6000) -> None:
+def outline_workspace(grbl_ser: serial.Serial, x_length: float, y_length: float, margin: float = 10.0, feed: int = 20000) -> None:
     """
     Outline the workspace border with specified margin.
     Starts at bottom-left corner and moves clockwise around the border.
@@ -682,12 +650,12 @@ def outline_workspace(grbl_ser: serial.Serial, x_length: float, y_length: float,
     logger.info(f"Workspace outline: X={x_length:.1f}mm, Y={y_length:.1f}mm, Margin={margin:.1f}mm")
     logger.info(f"Outline bounds: X=±{half_x:.1f}mm, Y=±{half_y:.1f}mm")
 
-    grbl_ser.write(b'G90\n')
+    grbl.set_mode_absolute(grbl_ser)
     time.sleep(0.2)
     grbl_ser.read_all()
 
     logger.info("Moving to bottom-left corner...")
-    grbl_ser.write(f'G1 X-{half_x} Y-{half_y} Z-{half_y} F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=-half_x, y=-half_y, feed=feed)
     move_time = (max(half_x, half_y) / feed) * 60.0 + 1.0
     time.sleep(move_time)
     grbl_ser.read_all()
@@ -695,31 +663,31 @@ def outline_workspace(grbl_ser: serial.Serial, x_length: float, y_length: float,
     logger.info("Outlining workspace border (clockwise)...")
 
     logger.info("  Bottom edge: left to right...")
-    grbl_ser.write(f'G1 X{half_x} Y-{half_y} Z-{half_y} F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=half_x, y=-half_y, feed=feed)
     move_time = ((half_x * 2) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()
 
     logger.info("  Right edge: bottom to top...")
-    grbl_ser.write(f'G1 X{half_x} Y{half_y} Z{half_y} F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=half_x, y=half_y, feed=feed)
     move_time = ((half_y * 2) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()
 
     logger.info("  Top edge: right to left...")
-    grbl_ser.write(f'G1 X-{half_x} Y{half_y} Z{half_y} F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=-half_x, y=half_y, feed=feed)
     move_time = ((half_x * 2) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()
 
     logger.info("  Left edge: top to bottom...")
-    grbl_ser.write(f'G1 X-{half_x} Y-{half_y} Z-{half_y} F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=-half_x, y=-half_y, feed=feed)
     move_time = ((half_y * 2) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()
 
     logger.info("Returning to center...")
-    grbl_ser.write(f'G1 X0 Y0 Z0 F{feed}\n'.encode())
+    grbl.move_absolute(grbl_ser, x=0, y=0, feed=feed)
     move_time = (max(half_x, half_y) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()

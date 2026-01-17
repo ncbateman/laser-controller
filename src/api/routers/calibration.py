@@ -9,24 +9,25 @@ from fastapi import Request
 from api.schemas.calibration import AxisCalibrationResponse
 from api.schemas.calibration import CalibrationRequest
 from api.schemas.calibration import CalibrationResponse
+from api.schemas import grbl as grbl_schemas
 from api.services import calibration
 
-def get_grbl_connection(request: Request) -> serial.Serial:
+def get_grbl_connection(request: Request) -> grbl_schemas.GrblConnection:
     """
-    Get GRBL serial connection from application state.
+    Get GRBL connection from application state.
 
     Args:
         request: FastAPI request object
 
     Returns:
-        GRBL serial connection
+        GRBL connection with cached settings
 
     Raises:
         HTTPException: 503 if GRBL connection is not available
     """
     if not hasattr(request.app.state, 'grbl_connection'):
         raise HTTPException(status_code=503, detail="GRBL connection not available")
-    return request.app.state.grbl_connection.serial
+    return request.app.state.grbl_connection
 
 def get_limit_connection(request: Request) -> serial.Serial:
     """
@@ -47,7 +48,7 @@ def get_limit_connection(request: Request) -> serial.Serial:
 
 async def home_all_endpoint(
     request: CalibrationRequest,
-    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
     limit_ser: serial.Serial = Depends(get_limit_connection)
 ) -> CalibrationResponse:
     """
@@ -57,7 +58,7 @@ async def home_all_endpoint(
 
     Args:
         request: CalibrationRequest containing outline option
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
     Returns:
@@ -67,7 +68,7 @@ async def home_all_endpoint(
         HTTPException: 500 if calibration fails, 503 if connections unavailable
     """
     try:
-        result = calibration.home_all(grbl_ser, limit_ser, outline=request.outline)
+        result = calibration.home_all(grbl_connection, limit_ser, outline=request.outline)
         return CalibrationResponse(
             status=result["status"],
             message=result["message"],
@@ -78,14 +79,14 @@ async def home_all_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 async def home_x_endpoint(
-    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
     limit_ser: serial.Serial = Depends(get_limit_connection)
 ) -> AxisCalibrationResponse:
     """
     Calibrate X axis using two-pass homing with calibration.
 
     Args:
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
     Returns:
@@ -95,7 +96,7 @@ async def home_x_endpoint(
         HTTPException: 500 if calibration fails, 503 if connections unavailable
     """
     try:
-        result = calibration.home_x_axis_fast(grbl_ser, limit_ser)
+        result = calibration.home_x_axis_fast(grbl_connection, limit_ser)
         return AxisCalibrationResponse(
             status=result["status"],
             message="X axis calibration complete",
@@ -108,7 +109,7 @@ async def home_x_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 async def home_y_endpoint(
-    grbl_ser: serial.Serial = Depends(get_grbl_connection),
+    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
     limit_ser: serial.Serial = Depends(get_limit_connection)
 ) -> AxisCalibrationResponse:
     """
@@ -116,7 +117,7 @@ async def home_y_endpoint(
     Moves both Y and Z together (dual motor Y axis).
 
     Args:
-        grbl_ser: GRBL serial connection
+        grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
     Returns:
@@ -126,7 +127,7 @@ async def home_y_endpoint(
         HTTPException: 500 if calibration fails, 503 if connections unavailable
     """
     try:
-        result = calibration.home_y_axis_fast(grbl_ser, limit_ser)
+        result = calibration.home_y_axis_fast(grbl_connection, limit_ser)
         return AxisCalibrationResponse(
             status=result["status"],
             message="Y axis calibration complete",
