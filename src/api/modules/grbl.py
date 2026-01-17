@@ -210,6 +210,8 @@ def set_mode_relative(ser: serial.Serial) -> None:
         ser: Serial connection to GRBL controller
     """
     ser.write(b'G91\n')
+    time.sleep(0.1)
+    ser.read_all()
 
 def set_mode_absolute(ser: serial.Serial) -> None:
     """
@@ -219,6 +221,8 @@ def set_mode_absolute(ser: serial.Serial) -> None:
         ser: Serial connection to GRBL controller
     """
     ser.write(b'G90\n')
+    time.sleep(0.1)
+    ser.read_all()
 
 def set_work_coordinate_offset(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None) -> None:
     """
@@ -241,6 +245,8 @@ def set_work_coordinate_offset(ser: serial.Serial, x: float | None = None, y: fl
         parts.append(f"Z{z}")
     command = " ".join(parts) + "\n"
     ser.write(command.encode())
+    time.sleep(0.1)
+    ser.read_all()
 
 def set_setting(ser: serial.Serial, key: str, value: float, connection: grbl_schemas.GrblConnection | None = None) -> None:
     """
@@ -326,3 +332,48 @@ def initialize_connection(ser: serial.Serial) -> None:
     ser.write(b'\r\n\r\n')
     time.sleep(1)
     ser.read_all()
+
+def query_position(ser: serial.Serial) -> grbl_schemas.GrblPosition:
+    """
+    Query GRBL for current machine position and status.
+
+    Args:
+        ser: Serial connection to GRBL controller
+
+    Returns:
+        GrblPosition with x, y, z coordinates, status, mode, and raw response
+    """
+    ser.reset_input_buffer()
+    send_raw_command(ser, b'?\n', wait_time=0.2)
+    response = read_response(ser, timeout=0.2)
+
+    result = grbl_schemas.GrblPosition(
+        x=None,
+        y=None,
+        z=None,
+        status="Unknown",
+        mode="Unknown",
+        raw=response
+    )
+
+    if '<' in response and '>' in response:
+        status_part = response[response.find('<'):response.find('>')+1]
+        result.status = status_part
+
+        if 'G' in status_part:
+            if 'G91' in status_part:
+                result.mode = 'Relative (G91)'
+            elif 'G90' in status_part:
+                result.mode = 'Absolute (G90)'
+
+        if 'MPos:' in response:
+            parts = response[response.find('MPos:')+5:].split(',')
+            if len(parts) >= 3:
+                try:
+                    result.x = float(parts[0].strip())
+                    result.y = float(parts[1].strip())
+                    result.z = float(parts[2].strip())
+                except ValueError:
+                    pass
+
+    return result

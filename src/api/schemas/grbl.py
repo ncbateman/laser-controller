@@ -1,3 +1,5 @@
+import time
+
 import serial
 
 import pydantic
@@ -131,6 +133,14 @@ class GrblSettings(pydantic.BaseModel):
             raise ValueError(f"Unknown setting key: {key}")
         setattr(self, key, value)
 
+class GrblPosition(pydantic.BaseModel):
+    x: float | None = None
+    y: float | None = None
+    z: float | None = None
+    status: str = "Unknown"
+    mode: str = "Unknown"
+    raw: str = ""
+
 class GrblConnection(pydantic.BaseModel):
     port: str
     serial: serial.Serial
@@ -151,4 +161,5 @@ class GrblConnection(pydantic.BaseModel):
             raise ValueError(f"Unknown setting key: {key}")
         command = f'${setting_num}={value}\n'
         self.serial.write(command.encode())
+        time.sleep(0.2)
         self.settings.set_setting_value(key, value)
