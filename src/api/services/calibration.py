@@ -94,7 +94,7 @@ def move_until_limit_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial, dir
             grbl_ser.reset_input_buffer()
             grbl.unlock_alarm(grbl_ser)
             time.sleep(0.1)
-            grbl.set_setting(grbl_ser, 1, 255)
+            grbl.set_setting(grbl_ser, "step_idle_delay", 255)
             time.sleep(0.1)
             grbl_ser.read_all()
             return True, grbl_ser, distance
@@ -130,7 +130,7 @@ def move_until_limit_fast_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, d
             grbl_ser.reset_input_buffer()
             grbl.unlock_alarm(grbl_ser)
             time.sleep(0.1)
-            grbl.set_setting(grbl_ser, 1, 255)
+            grbl.set_setting(grbl_ser, "step_idle_delay", 255)
             time.sleep(0.1)
             grbl_ser.read_all()
 
@@ -196,7 +196,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
     try:
 
         logger.info("Locking motors...")
-        grbl.set_setting(grbl_ser, 1, 255)
+        grbl.set_setting(grbl_ser, "step_idle_delay", 255)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -268,7 +268,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         logger.info(f"Known axis length: {known_axis_length:.2f}mm")
 
         logger.info("=== CALIBRATION ===")
-        current_steps = grbl.get_setting(grbl_connection, 100) or 250.0
+        current_steps = grbl.get_setting(grbl_connection, "x_steps_per_mm") or 250.0
 
         logger.info(f"Current X steps/mm: {current_steps}")
 
@@ -277,7 +277,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         logger.info(f"Correction factor: {correction_factor:.4f}")
         logger.info(f"New X steps/mm: {new_steps:.3f}")
 
-        grbl.set_setting(grbl_ser, 100, new_steps, connection=grbl_connection)
+        grbl_connection.update_setting("x_steps_per_mm", new_steps)
         time.sleep(0.2)
         grbl_ser.read_all()
         logger.info("Calibration applied")
@@ -290,7 +290,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         time.sleep(move_time)
         grbl_ser.read_all()
 
-        grbl.set_setting(grbl_ser, 1, 25, connection=grbl_connection)
+        grbl_connection.update_setting("step_idle_delay", 25)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -379,7 +379,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
     try:
 
         logger.info("Locking motors...")
-        grbl.set_setting(grbl_ser, 1, 255)
+        grbl.set_setting(grbl_ser, "step_idle_delay", 255)
         time.sleep(0.2)
         grbl_ser.read_all()
 
@@ -515,8 +515,8 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         logger.info(f"Known axis length: {known_axis_length:.2f}mm")
 
         logger.info("=== CALIBRATION ===")
-        current_steps_y = grbl.get_setting(grbl_connection, 101) or 40.0
-        current_steps_z = grbl.get_setting(grbl_connection, 102) or 40.0
+        current_steps_y = grbl.get_setting(grbl_connection, "y_steps_per_mm") or 40.0
+        current_steps_z = grbl.get_setting(grbl_connection, "z_steps_per_mm") or 40.0
 
         logger.info(f"Current Y steps/mm: {current_steps_y}")
         logger.info(f"Current Z steps/mm: {current_steps_z}")
@@ -528,9 +528,9 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         logger.info(f"New Y steps/mm: {new_steps_y:.3f}")
         logger.info(f"New Z steps/mm: {new_steps_z:.3f}")
 
-        grbl.set_setting(grbl_ser, 101, new_steps_y, connection=grbl_connection)
+        grbl_connection.update_setting("y_steps_per_mm", new_steps_y)
         time.sleep(0.2)
-        grbl.set_setting(grbl_ser, 102, new_steps_z, connection=grbl_connection)
+        grbl_connection.update_setting("z_steps_per_mm", new_steps_z)
         time.sleep(0.2)
         grbl_ser.read_all()
         logger.info("Calibration applied")
@@ -560,7 +560,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
 
         pos_after_final_center = query_grbl_position(grbl_ser)
 
-        grbl.set_setting(grbl_ser, 1, 25, connection=grbl_connection)
+        grbl_connection.update_setting("step_idle_delay", 25)
         time.sleep(0.2)
         grbl_ser.read_all()
 

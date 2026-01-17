@@ -46,6 +46,7 @@ def create_grbl_connection(port: str = "/dev/ttyUSB1") -> grbl_schemas.GrblConne
         RuntimeError: If connection cannot be established or initialized
     """
     try:
+        logger.info(f"Loading Settings...")
         grbl_ser = serial.Serial(port, 115200, timeout=1)
         time.sleep(2)
         grbl_ser.write(b'\r\n\r\n')
@@ -53,12 +54,17 @@ def create_grbl_connection(port: str = "/dev/ttyUSB1") -> grbl_schemas.GrblConne
         grbl_ser.read_all()
 
         settings_text = query_settings(grbl_ser)
-        settings = parse_settings(settings_text)
-        logger.debug(f"Loaded {len(settings)} GRBL settings")
+        raw_settings = parse_settings(settings_text)
+        settings = grbl_schemas.GrblSettings.from_raw_settings(raw_settings)
+
+        logger.info(f"Settings loaded successfully on GRBL controller at {port}")
 
         return grbl_schemas.GrblConnection(port=port, serial=grbl_ser, settings=settings)
     except Exception as e:
-        raise RuntimeError(f"Failed to connect to GRBL controller at {port}: {e}")
+        logger.error(f"Failed to connect to GRBL controller at {port}: {e}")
+        raise RuntimeError(f"Failed to load settings from GRBL controller at {port}: {e}")
+    finally:
+        grbl_ser.close()
 
 def send_command(ser: serial.Serial, request: grbl_schemas.GrblCommandRequest) -> grbl_schemas.GrblCommandResponse:
     """
@@ -233,33 +239,37 @@ def set_work_coordinate_offset(ser: serial.Serial, x: float | None = None, y: fl
     command = " ".join(parts) + "\n"
     ser.write(command.encode())
 
-def set_setting(ser: serial.Serial, setting_num: int, value: float, connection: grbl_schemas.GrblConnection | None = None) -> None:
+def set_setting(ser: serial.Serial, key: str, value: float, connection: grbl_schemas.GrblConnection | None = None) -> None:
     """
     Set GRBL setting parameter.
 
     Args:
         ser: Serial connection to GRBL controller
-        setting_num: Setting number (e.g., 1 for $1, 100 for $100)
+        key: Setting key name (e.g., "x_steps_per_mm", "step_idle_delay")
         value: Setting value
-        connection: Optional GrblConnection to update cached settings
+        connection: Optional GrblConnection to update cached settings and push to machine
     """
-    command = f'${setting_num}={value}\n'
-    ser.write(command.encode())
     if connection is not None:
-        connection.settings[setting_num] = value
+        connection.update_setting(key, value)
+    else:
+        setting_num = grbl_schemas.KEY_TO_SETTING_NUM.get(key)
+        if setting_num is None:
+            raise ValueError(f"Unknown setting key: {key}")
+        command = f'${setting_num}={value}\n'
+        ser.write(command.encode())
 
-def get_setting(connection: grbl_schemas.GrblConnection, setting_num: int) -> float | None:
+def get_setting(connection: grbl_schemas.GrblConnection, key: str) -> float | None:
     """
     Get cached GRBL setting value.
 
     Args:
         connection: GrblConnection with cached settings
-        setting_num: Setting number (e.g., 1 for $1, 100 for $100)
+        key: Setting key name (e.g., "x_steps_per_mm", "step_idle_delay")
 
     Returns:
         Setting value if found, None otherwise
     """
-    return connection.settings.get(setting_num)
+    return connection.settings.get_setting_value(key)
 
 def query_settings(ser: serial.Serial) -> str:
     """
