@@ -514,3 +514,46 @@ def outline_workspace(grbl_ser: serial.Serial, x_length: float, y_length: float,
     move_time = (max(half_x, half_y) / feed) * 60.0 + 0.5
     time.sleep(move_time)
     grbl_ser.read_all()
+
+def discover_limit_switches(limit_ser: serial.Serial, timeout_per_rail: float = 30.0) -> dict[str, list[int]]:
+    """
+    Discover which limit switches are on which rails by having user manually click them.
+    Steps through each rail (X, Y, Z) and polls for pressed switches.
+
+    Args:
+        limit_ser: Limit controller serial connection
+        timeout_per_rail: Time to wait for user to click switches per rail in seconds
+
+    Returns:
+        Dictionary mapping rail names to lists of switch IDs that were pressed
+    """
+    rails = ["x", "y", "z"]
+    results: dict[str, list[int]] = {"x": [], "y": [], "z": []}
+
+    for rail in rails:
+        logger.info(f"Waiting for limit switch presses on {rail.upper()} axis rail (timeout: {timeout_per_rail}s)")
+        logger.info(f"Please manually click the limit switches for the {rail.upper()} axis motor")
+
+        pressed_switches: set[int] = set()
+        deadline = time.time() + timeout_per_rail
+
+        while time.time() < deadline:
+            switch_states = limits.get_all_switches_state(limit_ser, timeout=0.1)
+            if switch_states:
+                for switch_id, state in switch_states.items():
+                    if state == 1 and switch_id not in pressed_switches:
+                        pressed_switches.add(switch_id)
+                        logger.info(f"Detected switch {switch_id} pressed on {rail.upper()} axis rail")
+
+            time.sleep(0.05)
+
+        results[rail] = sorted(list(pressed_switches))
+        if results[rail]:
+            logger.info(f"{rail.upper()} axis rail: switches {results[rail]} were pressed")
+        else:
+            logger.warning(f"No switches detected for {rail.upper()} axis rail")
+
+        time.sleep(1.0)
+
+    logger.info(f"Limit switch discovery complete: X={results['x']}, Y={results['y']}, Z={results['z']}")
+    return results
