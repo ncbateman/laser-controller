@@ -3,31 +3,9 @@ import time
 
 import serial
 from loguru import logger
-from pydantic import BaseModel
 from serial.tools import list_ports
 
-class LimitSwitch(BaseModel):
-    id: int
-    state: int
-
-class LimitControllerData(BaseModel):
-    device: str
-    switches: list[LimitSwitch]
-
-class LimitSwitchStateRequest(BaseModel):
-    switch_id: int
-    timeout: float = 0.5
-
-class LimitSwitchStateResponse(BaseModel):
-    switch_id: int
-    state: int
-    found: bool
-
-class LimitControllerConnection(BaseModel):
-    port: str
-    serial: serial.Serial
-
-    model_config = {"arbitrary_types_allowed": True}
+from api.schemas import limits as limits_schemas
 
 def find_limit_controller_port() -> str | None:
     """
@@ -60,7 +38,7 @@ def find_limit_controller_port() -> str | None:
             continue
     return None
 
-def create_limit_controller_connection(port: str) -> LimitControllerConnection:
+def create_limit_controller_connection(port: str) -> limits_schemas.LimitControllerConnection:
     """
     Create a serial connection to the limit controller.
 
@@ -75,11 +53,11 @@ def create_limit_controller_connection(port: str) -> LimitControllerConnection:
     """
     try:
         limit_ser = serial.Serial(port, 115200, timeout=0.1)
-        return LimitControllerConnection(port=port, serial=limit_ser)
+        return limits_schemas.LimitControllerConnection(port=port, serial=limit_ser)
     except Exception as e:
         raise RuntimeError(f"Failed to connect to limit controller at {port}: {e}")
 
-def read_limit_controller_data(limit_ser: serial.Serial, timeout: float = 0.5) -> LimitControllerData | None:
+def read_limit_controller_data(limit_ser: serial.Serial, timeout: float = 0.5) -> limits_schemas.LimitControllerData | None:
     """
     Read and parse limit controller JSON data from serial connection.
 
@@ -102,15 +80,15 @@ def read_limit_controller_data(limit_ser: serial.Serial, timeout: float = 0.5) -
                         json_data = json.loads(data)
                         if json_data.get('device') == 'limit-controller':
                             switches_data = json_data.get('switches', [])
-                            switches = [LimitSwitch(id=s.get('id'), state=s.get('state', 0)) for s in switches_data]
-                            return LimitControllerData(device=json_data.get('device', 'limit-controller'), switches=switches)
+                            switches = [limits_schemas.LimitSwitch(id=s.get('id'), state=s.get('state', 0)) for s in switches_data]
+                            return limits_schemas.LimitControllerData(device=json_data.get('device', 'limit-controller'), switches=switches)
                     except json.JSONDecodeError:
                         continue
         except Exception:
             continue
     return None
 
-def get_switch_state(limit_ser: serial.Serial, request: LimitSwitchStateRequest) -> LimitSwitchStateResponse:
+def get_switch_state(limit_ser: serial.Serial, request: limits_schemas.LimitSwitchStateRequest) -> limits_schemas.LimitSwitchStateResponse:
     """
     Read state of a specific limit switch from limit controller.
 
@@ -135,7 +113,7 @@ def get_switch_state(limit_ser: serial.Serial, request: LimitSwitchStateRequest)
                         for switch in switches:
                             if switch.get('id') == request.switch_id:
                                 state = switch.get('state', 0)
-                                return LimitSwitchStateResponse(
+                                return limits_schemas.LimitSwitchStateResponse(
                                     switch_id=request.switch_id,
                                     state=state,
                                     found=True
@@ -145,7 +123,7 @@ def get_switch_state(limit_ser: serial.Serial, request: LimitSwitchStateRequest)
         except Exception:
             continue
 
-    return LimitSwitchStateResponse(
+    return limits_schemas.LimitSwitchStateResponse(
         switch_id=request.switch_id,
         state=0,
         found=False

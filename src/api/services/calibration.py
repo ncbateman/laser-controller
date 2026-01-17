@@ -25,6 +25,7 @@ from loguru import logger
 from api.modules import grbl
 from api.modules import limits
 from api.schemas import grbl as grbl_schemas
+from api.schemas import limits as limits_schemas
 
 
 def query_grbl_position(grbl_ser: serial.Serial) -> dict[str, float | str | None]:
@@ -82,7 +83,7 @@ def move_until_limit_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial, dir
     start_time = time.time()
 
     while True:
-        request = limits.LimitSwitchStateRequest(switch_id=switch_id, timeout=0.01)
+        request = limits_schemas.LimitSwitchStateRequest(switch_id=switch_id, timeout=0.01)
         response = limits.get_switch_state(limit_ser, request)
         if response.state == 1:
             elapsed = time.time() - start_time
@@ -186,6 +187,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
     Returns:
         Dict with calibration results
     """
+    grbl_ser = grbl_connection.serial
     switch_1_id = 3
     switch_2_id = 2
     safety_margin = 5.0
@@ -323,7 +325,7 @@ def move_until_limit(grbl_ser: serial.Serial, limit_ser: serial.Serial, directio
 
     while True:
         step_count += 1
-        request = limits.LimitSwitchStateRequest(switch_id=switch_id)
+        request = limits_schemas.LimitSwitchStateRequest(switch_id=switch_id)
         response = limits.get_switch_state(limit_ser, request)
         if response.state == 1:
             logger.info(f"Switch {switch_id} already pressed, stopping")
@@ -351,7 +353,7 @@ def move_until_limit(grbl_ser: serial.Serial, limit_ser: serial.Serial, directio
 
         time.sleep(move_time)
 
-        request = limits.LimitSwitchStateRequest(switch_id=switch_id)
+        request = limits_schemas.LimitSwitchStateRequest(switch_id=switch_id)
         response = limits.get_switch_state(limit_ser, request)
         if response.state == 1:
             logger.info(f"Switch {switch_id} pressed, stopping")
@@ -369,6 +371,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
     Returns:
         Dict with calibration results
     """
+    grbl_ser = grbl_connection.serial
     switch_1_ids = [0, 1]
     switch_2_ids = [4, 5]
     safety_margin = 5

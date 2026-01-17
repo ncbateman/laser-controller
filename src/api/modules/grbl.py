@@ -62,9 +62,12 @@ def create_grbl_connection(port: str = "/dev/ttyUSB1") -> grbl_schemas.GrblConne
         return grbl_schemas.GrblConnection(port=port, serial=grbl_ser, settings=settings)
     except Exception as e:
         logger.error(f"Failed to connect to GRBL controller at {port}: {e}")
+        if 'grbl_ser' in locals():
+            try:
+                grbl_ser.close()
+            except Exception:
+                pass
         raise RuntimeError(f"Failed to load settings from GRBL controller at {port}: {e}")
-    finally:
-        grbl_ser.close()
 
 def send_command(ser: serial.Serial, request: grbl_schemas.GrblCommandRequest) -> grbl_schemas.GrblCommandResponse:
     """
