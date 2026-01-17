@@ -1,5 +1,6 @@
 # Laser Controller API
 
+![Coverage](https://img.shields.io/badge/coverage-22.5%25-orange.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-00a398.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)

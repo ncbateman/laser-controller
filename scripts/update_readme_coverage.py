@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 import sys
 import re
 
-def generate_coverage_table(coverage_xml_path='coverage.xml'):
+def get_coverage_data(coverage_xml_path='coverage.xml'):
     tree = ET.parse(coverage_xml_path)
     root = tree.getroot()
 
@@ -23,6 +23,25 @@ def generate_coverage_table(coverage_xml_path='coverage.xml'):
                 'branch_rate': package_branch_rate
             })
 
+    return total_line_rate, total_branch_rate, packages
+
+def get_coverage_badge_color(coverage: float) -> str:
+    if coverage >= 80:
+        return 'brightgreen'
+    elif coverage >= 60:
+        return 'green'
+    elif coverage >= 40:
+        return 'yellow'
+    elif coverage >= 20:
+        return 'orange'
+    else:
+        return 'red'
+
+def generate_coverage_badge(total_line_rate: float) -> str:
+    color = get_coverage_badge_color(total_line_rate)
+    return f"![Coverage](https://img.shields.io/badge/coverage-{total_line_rate:.1f}%25-{color}.svg)"
+
+def generate_coverage_table(total_line_rate: float, total_branch_rate: float, packages: list) -> str:
     markdown = "## Tests\n\n"
     markdown += f"**Overall Coverage:** {total_line_rate:.1f}% (Lines) | {total_branch_rate:.1f}% (Branches)\n\n"
     markdown += "### Coverage by Module\n\n"
@@ -43,14 +62,39 @@ def update_readme(readme_path='README.md', coverage_xml_path='coverage.xml'):
     with open(readme_path, 'r') as f:
         original_content = f.read()
 
-    coverage_table = generate_coverage_table(coverage_xml_path)
+    total_line_rate, total_branch_rate, packages = get_coverage_data(coverage_xml_path)
+    coverage_badge = generate_coverage_badge(total_line_rate)
+    coverage_table = generate_coverage_table(total_line_rate, total_branch_rate, packages)
 
-    if re.search(r'^## Tests\b', original_content, re.MULTILINE):
+    new_content = original_content
+
+    coverage_badge_pattern = r'!\[Coverage\][^\n]*'
+    if re.search(coverage_badge_pattern, new_content):
+        new_content = re.sub(coverage_badge_pattern, coverage_badge, new_content)
+    else:
+        lines = new_content.split('\n')
+        badge_line_idx = None
+
+        for i, line in enumerate(lines):
+            if line.startswith('!['):
+                badge_line_idx = i
+                break
+
+        if badge_line_idx is not None:
+            lines.insert(badge_line_idx, coverage_badge)
+            new_content = '\n'.join(lines)
+        else:
+            title_match = re.search(r'^(# .+\n\n)', new_content, re.MULTILINE)
+            if title_match:
+                insert_pos = title_match.end()
+                new_content = new_content[:insert_pos] + coverage_badge + '\n' + new_content[insert_pos:]
+
+    if re.search(r'^## Tests\b', new_content, re.MULTILINE):
         pattern = r'(^## Tests\b.*?)(?=^## |\Z)'
         replacement = coverage_table.rstrip() + '\n'
-        new_content = re.sub(pattern, replacement, original_content, flags=re.MULTILINE | re.DOTALL)
+        new_content = re.sub(pattern, replacement, new_content, flags=re.MULTILINE | re.DOTALL)
     else:
-        content = original_content.rstrip()
+        content = new_content.rstrip()
         new_content = content + '\n\n' + coverage_table.rstrip() + '\n'
 
     new_content = normalize_content(new_content)
