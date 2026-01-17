@@ -141,6 +141,14 @@ class GrblPosition(pydantic.BaseModel):
     mode: str = "Unknown"
     raw: str = ""
 
+class LimitSwitchMapping(pydantic.BaseModel):
+    """
+    Mapping of limit switch IDs to their corresponding axis rails.
+    """
+    x_axis_switches: list[int] = [2, 3]
+    y_axis_switches: list[int] = [0, 4]
+    z_axis_switches: list[int] = [1, 5]
+
 class GrblConnection(pydantic.BaseModel):
     port: str
     serial: serial.Serial
