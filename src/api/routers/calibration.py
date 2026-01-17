@@ -4,52 +4,18 @@ import fastapi
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Request
 
 from api.schemas.calibration import AxisCalibrationResponse
 from api.schemas.calibration import CalibrationRequest
 from api.schemas.calibration import CalibrationResponse
 from api.schemas import grbl as grbl_schemas
 from api.services import calibration
-
-def get_grbl_connection(request: Request) -> grbl_schemas.GrblConnection:
-    """
-    Get GRBL connection from application state.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        GRBL connection with cached settings
-
-    Raises:
-        HTTPException: 503 if GRBL connection is not available
-    """
-    if not hasattr(request.app.state, 'grbl_connection'):
-        raise HTTPException(status_code=503, detail="GRBL connection not available")
-    return request.app.state.grbl_connection
-
-def get_limit_connection(request: Request) -> serial.Serial:
-    """
-    Get limit controller serial connection from application state.
-
-    Args:
-        request: FastAPI request object
-
-    Returns:
-        Limit controller serial connection
-
-    Raises:
-        HTTPException: 503 if limit connection is not available
-    """
-    if not hasattr(request.app.state, 'limit_connection'):
-        raise HTTPException(status_code=503, detail="Limit controller connection not available")
-    return request.app.state.limit_connection.serial
+from api import utils
 
 async def home_all_endpoint(
     request: CalibrationRequest,
-    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
-    limit_ser: serial.Serial = Depends(get_limit_connection)
+    grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection),
+    limit_ser: serial.Serial = Depends(utils.get_limit_connection)
 ) -> CalibrationResponse:
     """
     Run full calibration sequence: Y axis first, then X axis.
@@ -79,8 +45,8 @@ async def home_all_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 async def home_x_endpoint(
-    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
-    limit_ser: serial.Serial = Depends(get_limit_connection)
+    grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection),
+    limit_ser: serial.Serial = Depends(utils.get_limit_connection)
 ) -> AxisCalibrationResponse:
     """
     Calibrate X axis using two-pass homing with calibration.
@@ -109,8 +75,8 @@ async def home_x_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 async def home_y_endpoint(
-    grbl_connection: grbl_schemas.GrblConnection = Depends(get_grbl_connection),
-    limit_ser: serial.Serial = Depends(get_limit_connection)
+    grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection),
+    limit_ser: serial.Serial = Depends(utils.get_limit_connection)
 ) -> AxisCalibrationResponse:
     """
     Calibrate Y axis using two-pass homing with calibration.
