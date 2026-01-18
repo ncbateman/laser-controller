@@ -6,7 +6,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 
 from api.schemas.calibration import AxisCalibrationResponse
-from api.schemas.calibration import CalibrationRequest
 from api.schemas.calibration import CalibrationResponse
 from api.schemas.calibration import StepsPerMmRequest
 from api.schemas.calibration import StepsPerMmResponse
@@ -15,17 +14,14 @@ from api.services import calibration
 from api import utils
 
 async def home_all_endpoint(
-    request: CalibrationRequest,
     grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection),
     limit_ser: serial.Serial = Depends(utils.get_limit_connection)
 ) -> CalibrationResponse:
     """
     Run full calibration sequence: Y axis first, then X axis.
-    Sets center as origin (0,0,0) after calibration.
-    Optionally outlines the workspace border.
+    Sets origin (0,0,0) to be 10mm from the front-left corner and returns toolhead to origin.
 
     Args:
-        request: CalibrationRequest containing outline option
         grbl_connection: GRBL connection with cached settings
         limit_ser: Limit controller serial connection
 
@@ -36,7 +32,7 @@ async def home_all_endpoint(
         HTTPException: 500 if calibration fails, 503 if connections unavailable
     """
     try:
-        result = calibration.home_all(grbl_connection, limit_ser, outline=request.outline)
+        result = calibration.home_all(grbl_connection, limit_ser)
         return CalibrationResponse(
             status=result["status"],
             message=result["message"],

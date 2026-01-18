@@ -1,8 +1,5 @@
 import pydantic
 
-class CalibrationRequest(pydantic.BaseModel):
-    outline: bool = True
-
 class CalibrationResponse(pydantic.BaseModel):
     status: str
     message: str
