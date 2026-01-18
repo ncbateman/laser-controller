@@ -152,10 +152,11 @@ def read_response(ser: serial.Serial, timeout: float = 0.2) -> str:
     response = ser.read_all().decode('utf-8', errors='ignore').strip()
     return response
 
-def move_relative(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None) -> None:
+def move_relative(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None, invert_y: bool = True) -> None:
     """
     Send relative movement command (G1 in relative mode).
     Automatically duplicates Y value to Z for dual motor Y axis configuration.
+    Inverts Y coordinates by default to account for machine coordinate system after calibration.
 
     Args:
         ser: Serial connection to GRBL controller
@@ -163,24 +164,29 @@ def move_relative(ser: serial.Serial, x: float | None = None, y: float | None = 
         y: Y axis movement distance in mm (will also move Z by same amount)
         z: Z axis movement distance in mm (ignored if y is provided, uses y value instead)
         feed: Feed rate in mm/min
+        invert_y: If True, inverts Y coordinate for post-calibration movements (default: True).
+                  Set to False during calibration to use raw machine coordinates.
     """
     parts = ["G1"]
     if x is not None:
         parts.append(f"X{x}")
     if y is not None:
-        parts.append(f"Y{y}")
-        parts.append(f"Z{y}")
+        y_value = -y if invert_y else y
+        parts.append(f"Y{y_value}")
+        parts.append(f"Z{y_value}")
     elif z is not None:
-        parts.append(f"Z{z}")
+        z_value = -z if invert_y else z
+        parts.append(f"Z{z_value}")
     if feed is not None:
         parts.append(f"F{feed}")
     command = " ".join(parts) + "\n"
     ser.write(command.encode())
 
-def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None) -> None:
+def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None, invert_y: bool = True) -> None:
     """
     Send absolute movement command (G1 in absolute mode).
     Automatically duplicates Y value to Z for dual motor Y axis configuration.
+    Inverts Y coordinates by default to account for machine coordinate system after calibration.
 
     Args:
         ser: Serial connection to GRBL controller
@@ -188,15 +194,19 @@ def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = 
         y: Y axis target position in mm (will also set Z to same value)
         z: Z axis target position in mm (ignored if y is provided, uses y value instead)
         feed: Feed rate in mm/min
+        invert_y: If True, inverts Y coordinate for post-calibration movements (default: True).
+                  Set to False during calibration to use raw machine coordinates.
     """
     parts = ["G1"]
     if x is not None:
         parts.append(f"X{x}")
     if y is not None:
-        parts.append(f"Y{y}")
-        parts.append(f"Z{y}")
+        y_value = -y if invert_y else y
+        parts.append(f"Y{y_value}")
+        parts.append(f"Z{y_value}")
     elif z is not None:
-        parts.append(f"Z{z}")
+        z_value = -z if invert_y else z
+        parts.append(f"Z{z_value}")
     if feed is not None:
         parts.append(f"F{feed}")
     command = " ".join(parts) + "\n"

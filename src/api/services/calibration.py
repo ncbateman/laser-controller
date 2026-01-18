@@ -41,9 +41,9 @@ def move_until_limit_fast(grbl_ser: serial.Serial, limit_ser: serial.Serial, dir
 
     grbl_ser.reset_input_buffer()
     if direction == "+":
-        grbl.move_relative(grbl_ser, x=max_distance, feed=feed)
+        grbl.move_relative(grbl_ser, x=max_distance, feed=feed, invert_y=False)
     else:
-        grbl.move_relative(grbl_ser, x=-max_distance, feed=feed)
+        grbl.move_relative(grbl_ser, x=-max_distance, feed=feed, invert_y=False)
     start_time = time.time()
 
     while True:
@@ -74,9 +74,9 @@ def move_until_limit_fast_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, d
 
     grbl_ser.reset_input_buffer()
     if direction == "+":
-        grbl.move_relative(grbl_ser, y=max_distance, feed=feed)
+        grbl.move_relative(grbl_ser, y=max_distance, feed=feed, invert_y=False)
     else:
-        grbl.move_relative(grbl_ser, y=-max_distance, feed=feed)
+        grbl.move_relative(grbl_ser, y=-max_distance, feed=feed, invert_y=False)
     start_time = time.time()
 
     while True:
@@ -198,9 +198,9 @@ def move_until_limit_y(grbl_ser: serial.Serial, limit_ser: serial.Serial, direct
 
         grbl_ser.reset_input_buffer()
         if direction == "+":
-            grbl.move_relative(grbl_ser, y=step_size, feed=feed)
+            grbl.move_relative(grbl_ser, y=step_size, feed=feed, invert_y=False)
         else:
-            grbl.move_relative(grbl_ser, y=-step_size, feed=feed)
+            grbl.move_relative(grbl_ser, y=-step_size, feed=feed, invert_y=False)
         distance_traveled += step_size
 
         deadline = time.time() + 2.0
@@ -254,13 +254,13 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
 
         grbl.set_mode_relative(grbl_ser)
         rough_center = rough_distance / 2.0
-        grbl.move_relative(grbl_ser, x=rough_center, feed=20000)
+        grbl.move_relative(grbl_ser, x=rough_center, feed=20000, invert_y=False)
         move_time = (rough_center / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
 
         fast_approach = rough_center - safety_margin
-        grbl.move_relative(grbl_ser, x=fast_approach, feed=20000)
+        grbl.move_relative(grbl_ser, x=fast_approach, feed=20000, invert_y=False)
         move_time = (fast_approach / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -271,7 +271,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
 
         dist_to_limit_1 = fast_approach + fine_dist_1
         return_distance = dist_to_limit_1 + fast_approach
-        grbl.move_relative(grbl_ser, x=-return_distance, feed=20000)
+        grbl.move_relative(grbl_ser, x=-return_distance, feed=20000, invert_y=False)
         move_time = (return_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -289,7 +289,7 @@ def home_x_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         grbl_ser.read_all()
 
         center_distance = known_axis_length / 2.0
-        grbl.move_relative(grbl_ser, x=center_distance, feed=20000)
+        grbl.move_relative(grbl_ser, x=center_distance, feed=20000, invert_y=False)
         move_time = (center_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -339,9 +339,9 @@ def move_until_limit(grbl_ser: serial.Serial, limit_ser: serial.Serial, directio
 
         grbl_ser.reset_input_buffer()
         if direction == "+":
-            grbl.move_relative(grbl_ser, x=step_size, feed=feed)
+            grbl.move_relative(grbl_ser, x=step_size, feed=feed, invert_y=False)
         else:
-            grbl.move_relative(grbl_ser, x=-step_size, feed=feed)
+            grbl.move_relative(grbl_ser, x=-step_size, feed=feed, invert_y=False)
         distance_traveled += step_size
 
         deadline = time.time() + 2.0
@@ -422,7 +422,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         else:
             rough_center = rough_distance / 2.0
 
-        grbl.move_relative(grbl_ser, y=rough_center, feed=20000)
+        grbl.move_relative(grbl_ser, y=rough_center, feed=20000, invert_y=False)
         move_time = (rough_center / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -441,7 +441,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
             else:
                 fast_approach = rough_center - safety_margin
 
-        grbl.move_relative(grbl_ser, y=fast_approach, feed=20000)
+        grbl.move_relative(grbl_ser, y=fast_approach, feed=20000, invert_y=False)
         move_time = (abs(fast_approach) / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -473,7 +473,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
         else:
             return_distance = dist_to_limit_1_from_center + dist_to_limit_1_from_center
 
-        grbl.move_relative(grbl_ser, y=-return_distance, feed=20000)
+        grbl.move_relative(grbl_ser, y=-return_distance, feed=20000, invert_y=False)
         move_time = (return_distance / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -512,7 +512,7 @@ def home_y_axis_fast(grbl_connection: grbl_schemas.GrblConnection, limit_ser: se
             center_distance = known_axis_length / 2.0
 
         grbl.set_mode_relative(grbl_ser)
-        grbl.move_relative(grbl_ser, y=center_distance, feed=20000)
+        grbl.move_relative(grbl_ser, y=center_distance, feed=20000, invert_y=False)
         move_time = (abs(center_distance) / 20000.0) * 60.0 + 0.5
         time.sleep(move_time)
         grbl_ser.read_all()
@@ -577,8 +577,10 @@ def home_all(grbl_connection: grbl_schemas.GrblConnection, limit_ser: serial.Ser
 
         min_x = x_result.get("min_x_limit")
         max_y = y_result.get("max_y_limit")
+        actual_x_length = x_result.get("measured_length") or x_axis_length
+        actual_y_length = y_result.get("measured_length") or y_axis_length
 
-        return_to_origin_and_set_home(grbl_ser, min_x, max_y, corner_offset=10.0, feed=20000)
+        return_to_origin_and_set_home(grbl_ser, min_x, max_y, actual_x_length, actual_y_length, corner_offset=10.0, feed=20000)
 
         logger.info("Calibration complete")
 
@@ -593,16 +595,20 @@ def home_all(grbl_connection: grbl_schemas.GrblConnection, limit_ser: serial.Ser
         logger.error(f"Full calibration failed: {e}")
         raise
 
-def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, front_y: float | None, corner_offset: float = 10.0, feed: int = 20000) -> None:
+def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, max_y: float | None, x_length: float, y_length: float, corner_offset: float = 10.0, feed: int = 20000) -> None:
     """
     Return toolhead to origin and set 0,0,0 to be corner_offset mm from the front-left corner.
-    Front-left corner is defined as minimum X and front Y position (maximum Y limit).
+    Front-left corner is defined as minimum X and maximum Y position (front Y limit).
+    Sets soft limits to workspace size minus 2*corner_offset on each edge.
     Uses combined Y+Z movement (not independent).
+    All coordinates will be positive (0 to max_travel).
 
     Args:
         grbl_ser: Serial connection to GRBL controller
         min_x: Minimum X limit position from calibration (None if unavailable)
-        front_y: Front Y limit position from calibration (maximum Y, None if unavailable)
+        max_y: Maximum Y limit position from calibration (front Y limit, None if unavailable)
+        x_length: Total X axis length in mm
+        y_length: Total Y axis length in mm
         corner_offset: Distance in mm from corner to set as origin (default: 10.0)
         feed: Feed rate in mm/min for movement
     """
@@ -611,22 +617,22 @@ def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, 
     if min_x is not None:
         front_left_corner_x = min_x
     elif pos_current.x is not None:
-        front_left_corner_x = pos_current.x - 145.5
+        front_left_corner_x = pos_current.x - (x_length / 2.0)
     else:
-        front_left_corner_x = -145.5
+        front_left_corner_x = -(x_length / 2.0)
 
-    if front_y is not None:
-        front_left_corner_y = front_y
+    if max_y is not None:
+        front_left_corner_y = max_y
     elif pos_current.y is not None:
-        front_left_corner_y = pos_current.y + 449.5
+        front_left_corner_y = pos_current.y + (y_length / 2.0)
     else:
-        front_left_corner_y = 449.5
+        front_left_corner_y = (y_length / 2.0)
 
     home_x = front_left_corner_x + corner_offset
     home_y = front_left_corner_y - corner_offset
 
     grbl.set_mode_absolute(grbl_ser)
-    grbl.move_absolute(grbl_ser, x=home_x, y=home_y, feed=feed)
+    grbl.move_absolute(grbl_ser, x=home_x, y=home_y, feed=feed, invert_y=False)
     current_x = pos_current.x or 0.0
     current_y = pos_current.y or 0.0
     move_time = (max(abs(home_x - current_x), abs(home_y - current_y)) / feed) * 60.0 + 0.5
@@ -634,4 +640,27 @@ def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, 
     grbl_ser.read_all()
 
     grbl.set_work_coordinate_offset(grbl_ser, x=0, y=0)
+
+    x_max_travel = x_length - (2 * corner_offset)
+    y_max_travel = y_length - (2 * corner_offset)
+
+    grbl.set_setting(grbl_ser, "x_max_travel", x_max_travel)
+    grbl.set_setting(grbl_ser, "y_max_travel", y_max_travel)
+    grbl.set_setting(grbl_ser, "z_max_travel", y_max_travel)
+    grbl.set_setting(grbl_ser, "soft_limits", 1.0)
+    grbl_ser.read_all()
+
     logger.info(f"Origin set to 10mm from front-left corner at machine position ({home_x:.2f}, {home_y:.2f})")
+    logger.info(f"Soft limits set: X=0 to {x_max_travel:.2f}mm, Y=0 to {y_max_travel:.2f}mm")
+
+    center_x = x_max_travel / 2.0
+    center_y = y_max_travel / 2.0
+
+    logger.info(f"Moving to center to verify coordinates: ({center_x:.2f}, {center_y:.2f})")
+    grbl.move_absolute(grbl_ser, x=center_x, y=center_y, feed=feed)
+    move_time = (max(center_x, center_y) / feed) * 60.0 + 0.5
+    time.sleep(move_time)
+    grbl_ser.read_all()
+
+    pos_at_center = grbl.query_position(grbl_ser)
+    logger.info(f"Position at center: X={pos_at_center.x:.2f}, Y={pos_at_center.y:.2f}, Z={pos_at_center.z:.2f}")

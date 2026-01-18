@@ -1,6 +1,6 @@
 # Laser Controller API
 
-![Coverage](https://img.shields.io/badge/coverage-22.3%25-orange.svg)
+![Coverage](https://img.shields.io/badge/coverage-21.8%25-orange.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-00a398.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
@@ -84,14 +84,14 @@ _More endpoints will be added as the API is developed._
 
 ## Tests
 
-**Overall Coverage:** 22.3% (Lines) | 0.0% (Branches)
+**Overall Coverage:** 21.8% (Lines) | 0.0% (Branches)
 
 ### Coverage by Module
 
 | Module | Lines | Branches |
 |--------|-------|----------|
 | `.` | 20.0% | 0.0% |
-| `modules` | 11.8% | 0.0% |
+| `modules` | 11.6% | 0.0% |
 | `routers` | 54.2% | 0.0% |
 | `schemas` | 87.1% | 0.0% |
-| `services` | 4.3% | 0.0% |
+| `services` | 4.1% | 0.0% |
