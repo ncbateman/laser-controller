@@ -16,3 +16,15 @@ class AxisCalibrationResponse(pydantic.BaseModel):
     measured_length: float | None = None
     known_length: float | None = None
     steps_per_mm: float | None = None
+
+class StepsPerMmRequest(pydantic.BaseModel):
+    x: float | None = None
+    y: float | None = None
+    z: float | None = None
+
+class StepsPerMmResponse(pydantic.BaseModel):
+    status: str
+    message: str
+    x_steps_per_mm: float | None = None
+    y_steps_per_mm: float | None = None
+    z_steps_per_mm: float | None = None

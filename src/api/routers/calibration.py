@@ -8,6 +8,8 @@ from fastapi import HTTPException
 from api.schemas.calibration import AxisCalibrationResponse
 from api.schemas.calibration import CalibrationRequest
 from api.schemas.calibration import CalibrationResponse
+from api.schemas.calibration import StepsPerMmRequest
+from api.schemas.calibration import StepsPerMmResponse
 from api.schemas import grbl as grbl_schemas
 from api.services import calibration
 from api import utils
@@ -105,6 +107,44 @@ async def home_y_endpoint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def update_steps_per_mm_endpoint(
+    request: StepsPerMmRequest,
+    grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection)
+) -> StepsPerMmResponse:
+    """
+    Update GRBL steps per mm settings for specified axes.
+
+    Args:
+        request: StepsPerMmRequest containing x, y, and/or z values to update
+        grbl_connection: GRBL connection with cached settings
+
+    Returns:
+        StepsPerMmResponse with updated steps per mm values
+
+    Raises:
+        HTTPException: 400 if no axes specified, 500 if update fails
+    """
+    if request.x is None and request.y is None and request.z is None:
+        raise HTTPException(status_code=400, detail="At least one axis (x, y, or z) must be specified")
+
+    try:
+        if request.x is not None:
+            grbl_connection.update_setting("x_steps_per_mm", request.x)
+        if request.y is not None:
+            grbl_connection.update_setting("y_steps_per_mm", request.y)
+        if request.z is not None:
+            grbl_connection.update_setting("z_steps_per_mm", request.z)
+
+        return StepsPerMmResponse(
+            status="success",
+            message="Steps per mm updated successfully",
+            x_steps_per_mm=grbl_connection.settings.x_steps_per_mm,
+            y_steps_per_mm=grbl_connection.settings.y_steps_per_mm,
+            z_steps_per_mm=grbl_connection.settings.z_steps_per_mm
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 def factory(app: fastapi.FastAPI) -> APIRouter:
     """
     Create and configure the calibration API router with all calibration endpoints.
@@ -117,6 +157,7 @@ def factory(app: fastapi.FastAPI) -> APIRouter:
         - POST /calibration/home-all - Full calibration (Y then X)
         - POST /calibration/home-x - X axis calibration only
         - POST /calibration/home-y - Y axis calibration only
+        - PUT /calibration/steps-per-mm - Update GRBL steps per mm settings
     """
     router = APIRouter(prefix="/calibration", tags=["calibration"])
 
@@ -139,6 +180,13 @@ def factory(app: fastapi.FastAPI) -> APIRouter:
         home_y_endpoint,
         methods=["POST"],
         response_model=AxisCalibrationResponse
+    )
+
+    router.add_api_route(
+        "/steps-per-mm",
+        update_steps_per_mm_endpoint,
+        methods=["PUT"],
+        response_model=StepsPerMmResponse
     )
 
     return router
