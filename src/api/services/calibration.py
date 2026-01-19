@@ -599,7 +599,6 @@ def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, 
     """
     Return toolhead to origin and set 0,0,0 to be corner_offset mm from the front-left corner.
     Front-left corner is defined as minimum X and maximum Y position (front Y limit).
-    Sets soft limits to workspace size minus 2*corner_offset on each edge.
     Uses combined Y+Z movement (not independent).
     All coordinates will be positive (0 to max_travel).
 
@@ -639,28 +638,8 @@ def return_to_origin_and_set_home(grbl_ser: serial.Serial, min_x: float | None, 
     time.sleep(move_time)
     grbl_ser.read_all()
 
+    time.sleep(2.0)
+
     grbl.set_work_coordinate_offset(grbl_ser, x=0, y=0)
 
-    x_max_travel = x_length - (2 * corner_offset)
-    y_max_travel = y_length - (2 * corner_offset)
-
-    grbl.set_setting(grbl_ser, "x_max_travel", x_max_travel)
-    grbl.set_setting(grbl_ser, "y_max_travel", y_max_travel)
-    grbl.set_setting(grbl_ser, "z_max_travel", y_max_travel)
-    grbl.set_setting(grbl_ser, "soft_limits", 1.0)
-    grbl_ser.read_all()
-
-    logger.info(f"Origin set to 10mm from front-left corner at machine position ({home_x:.2f}, {home_y:.2f})")
-    logger.info(f"Soft limits set: X=0 to {x_max_travel:.2f}mm, Y=0 to {y_max_travel:.2f}mm")
-
-    center_x = x_max_travel / 2.0
-    center_y = y_max_travel / 2.0
-
-    logger.info(f"Moving to center to verify coordinates: ({center_x:.2f}, {center_y:.2f})")
-    grbl.move_absolute(grbl_ser, x=center_x, y=center_y, feed=feed)
-    move_time = (max(center_x, center_y) / feed) * 60.0 + 0.5
-    time.sleep(move_time)
-    grbl_ser.read_all()
-
-    pos_at_center = grbl.query_position(grbl_ser)
-    logger.info(f"Position at center: X={pos_at_center.x:.2f}, Y={pos_at_center.y:.2f}, Z={pos_at_center.z:.2f}")
+    logger.info(f"Machine and work origins set to 10mm from front-left corner (position 0,0,0)")

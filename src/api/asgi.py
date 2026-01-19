@@ -6,6 +6,7 @@ from api.modules import grbl
 from api.modules import limits
 from api.routers.calibration import factory as calibration_factory
 from api.routers.health import factory as health_factory
+from api.routers.jog import factory as jog_factory
 from api import utils
 
 @asynccontextmanager
@@ -60,5 +61,6 @@ def factory():
 
     app.include_router(health_factory(app))
     app.include_router(calibration_factory(app))
+    app.include_router(jog_factory(app))
 
     return app
