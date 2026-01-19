@@ -41,13 +41,7 @@ async def jog_endpoint(
         if current_pos.x is None or current_pos.y is None:
             raise HTTPException(status_code=500, detail="Unable to query current work position")
 
-        logger.info(f"[JOG] Raw position response: {current_pos.raw}")
-        logger.info(f"[JOG] Current work position - X: {current_pos.x}, Y: {current_pos.y}, Z: {current_pos.z}")
-        logger.info(f"[JOG] Requested jog - X: {request.x}, Y: {request.y}")
-
         grbl.set_mode_relative(grbl_ser)
-
-        logger.info(f"[JOG] Sending move_relative with invert_y=True")
         grbl.move_relative(grbl_ser, x=request.x, y=request.y, feed=request.feed, invert_y=True)
 
         max_distance = max(
@@ -59,8 +53,6 @@ async def jog_endpoint(
         grbl_ser.read_all()
 
         final_pos = grbl.query_position(grbl_ser)
-        logger.info(f"[JOG] Final position response: {final_pos.raw}")
-        logger.info(f"[JOG] Final work position - X: {final_pos.x}, Y: {final_pos.y}, Z: {final_pos.z}")
 
         return JogResponse(
             status="success",

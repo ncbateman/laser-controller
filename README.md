@@ -90,7 +90,7 @@ _More endpoints will be added as the API is developed._
 
 | Module | Lines | Branches |
 |--------|-------|----------|
-| `.` | 19.5% | 0.0% |
+| `.` | 19.0% | 0.0% |
 | `modules` | 10.8% | 0.0% |
 | `routers` | 54.2% | 0.0% |
 | `schemas` | 87.1% | 0.0% |

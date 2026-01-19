@@ -9,6 +9,8 @@ dependencies = [
     "fastapi",
     "loguru",
     "pyserial",
+    "python-multipart",
+    "svg-to-gcode",
     "uvicorn",
 ]
 
