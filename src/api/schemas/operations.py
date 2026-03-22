@@ -13,3 +13,10 @@ class SvgToGcodeResponse(pydantic.BaseModel):
     final_position_x: float | None = None
     final_position_y: float | None = None
     final_position_z: float | None = None
+
+class ZapResponse(pydantic.BaseModel):
+    status: str
+    message: str
+    position_x: float | None = None
+    position_y: float | None = None
+    position_z: float | None = None

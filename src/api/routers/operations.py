@@ -15,6 +15,7 @@ from api import utils
 from api.modules import grbl
 from api.schemas import grbl as grbl_schemas
 from api.schemas.operations import SvgToGcodeResponse
+from api.schemas.operations import ZapResponse
 
 async def svg_to_gcode_endpoint(
     svg_file: UploadFile,
@@ -23,6 +24,24 @@ async def svg_to_gcode_endpoint(
     origin_x: float = Form(0.0),
     origin_y: float = Form(0.0),
     laser_power: int = Form(1000, description="Laser power level (0-1000, default: 1000)"),
+    passes: int = Form(
+        1,
+        ge=1,
+        le=500,
+        description="Number of cut cycles (each cycle is one laser pass plus cooling_passes non-laser passes)",
+    ),
+    cooling_passes: int = Form(
+        2,
+        ge=0,
+        le=50,
+        description="Non-laser runs of the same toolpath after each cut (0 = laser only)",
+    ),
+    x_cut_feed_scale: float = Form(
+        1.0,
+        ge=0.1,
+        le=2.0,
+        description="Multiply cutting feed on G1 moves where |dX| > |dY| (e.g. 0.85 slows X-dominant cuts 15%)",
+    ),
     grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection)
 ) -> SvgToGcodeResponse:
     """
@@ -37,6 +56,9 @@ async def svg_to_gcode_endpoint(
         origin_x: X coordinate offset in mm from home position to apply to toolpath center (default: 0.0)
         origin_y: Y coordinate offset in mm from home position to apply to toolpath center (default: 0.0)
         laser_power: Laser power level from 0-1000 (default: 1000, maximum power)
+        passes: Number of cut cycles (default: 1, max 500)
+        cooling_passes: After each cut, how many times to repeat the path with the laser off (default 2, max 50; 0 disables cooling)
+        x_cut_feed_scale: Scale factor for cutting feed on X-dominant G1 segments (default 1.0; use below 1.0 to slow X)
         grbl_connection: GRBL connection with cached settings
 
     Returns:
@@ -154,115 +176,159 @@ async def svg_to_gcode_endpoint(
         g_commands_found = set()
         m_commands_found = set()
 
-        for line in gcode_lines:
-            line = line.strip()
-            if not line or line.startswith(';') or line.startswith('('):
-                continue
+        initial_z = current_pos.z if current_pos.z is not None else 0.0
 
-            parts = line.split()
-            if not parts:
-                continue
+        phases: list[tuple[bool, str]] = [(True, "cut")]
+        for i in range(cooling_passes):
+            label = f"cool_{i + 1}" if cooling_passes > 1 else "cool"
+            phases.append((False, label))
 
-            command_type = parts[0].upper()
+        phases_per_cycle = 1 + cooling_passes
+        total_phases = passes * phases_per_cycle
 
-            if command_type.startswith('M'):
-                m_commands_found.add(command_type)
-                if command_type in ['M3', 'M4', 'M5']:
-                    laser_commands_found.append(line)
-                    logger.info(f"[SVG_TO_GCODE] Laser command found: {line}")
-                else:
-                    logger.debug(f"[SVG_TO_GCODE] M-command found: {line}")
-            elif command_type.startswith('G'):
-                g_commands_found.add(command_type)
+        phase_index = 0
+        for pass_num in range(passes):
+            for laser_on, phase_label in phases:
+                if phase_index > 0:
+                    current_x = target_center_x
+                    current_y = target_center_y
+                    current_z = initial_z
+                    logger.info(
+                        f"[SVG_TO_GCODE] Cycle {pass_num + 1}/{passes} — {phase_label} pass "
+                        f"(phase {phase_index + 1}/{total_phases})"
+                    )
 
-            if command_type in ['G90']:
-                grbl.set_mode_absolute(grbl_ser)
-                commands_sent += 1
-                continue
-            elif command_type in ['G91']:
-                logger.warning("Relative mode (G91) detected in G-code, but absolute mode is required. Skipping.")
-                continue
-            elif command_type.startswith('M'):
-                logger.info(f"[SVG_TO_GCODE] Executing M-command: {line}")
-                grbl_command = grbl_schemas.GrblCommandRequest(
-                    command=line,
-                    label="G-code M-command",
-                    retries=3,
-                    timeout=1.0
-                )
-                response = grbl.send_command(grbl_ser, grbl_command)
-                if not response.success:
-                    logger.warning(f"[SVG_TO_GCODE] M-command {line} failed: {response.response}")
-                else:
-                    logger.info(f"[SVG_TO_GCODE] M-command {line} executed successfully")
-                commands_sent += 1
-                continue
-            elif command_type in ['G92', 'G28', 'G30']:
-                logger.debug(f"[SVG_TO_GCODE] Executing G-command: {line}")
-                grbl_command = grbl_schemas.GrblCommandRequest(
-                    command=line,
-                    label="G-code command",
-                    retries=3,
-                    timeout=1.0
-                )
-                response = grbl.send_command(grbl_ser, grbl_command)
-                if not response.success:
-                    logger.warning(f"[SVG_TO_GCODE] Command {line} failed: {response.response}")
-                commands_sent += 1
-                continue
-            elif command_type == 'G0' or command_type == 'G1':
-                x_val = None
-                y_val = None
-                z_val = None
-                feed_val = None
+                if not laser_on:
+                    m5_off = grbl_schemas.GrblCommandRequest(
+                        command="M5",
+                        label="Laser off before cooling pass",
+                        retries=3,
+                        timeout=1.0
+                    )
+                    response = grbl.send_command(grbl_ser, m5_off)
+                    if not response.success:
+                        logger.warning(f"[SVG_TO_GCODE] M5 before cooling pass failed: {response.response}")
+                    commands_sent += 1
 
-                for part in parts[1:]:
-                    if part.startswith('X'):
-                        raw_x = float(part[1:].rstrip(';'))
-                        x_val = (raw_x - raw_center_x) + target_center_x
-                    elif part.startswith('Y'):
-                        raw_y = float(part[1:].rstrip(';'))
-                        y_val = (raw_y - raw_center_y) + target_center_y
-                    elif part.startswith('Z'):
-                        z_val = float(part[1:].rstrip(';'))
-                    elif part.startswith('F'):
-                        feed_val = int(float(part[1:].rstrip(';')))
+                for line in gcode_lines:
+                    line = line.strip()
+                    if not line or line.startswith(';') or line.startswith('('):
+                        continue
 
-                if x_val is None and y_val is None and z_val is None:
-                    continue
+                    parts = line.split()
+                    if not parts:
+                        continue
 
-                if x_val is None:
-                    x_val = current_x
-                if y_val is None:
-                    y_val = current_y
-                if z_val is None:
-                    z_val = current_z
+                    command_type = parts[0].upper()
 
-                if command_type == 'G0':
-                    feed_to_use = movement_feed
-                else:
-                    feed_to_use = feed_val if feed_val is not None else feed
+                    if command_type.startswith('M'):
+                        m_commands_found.add(command_type)
+                        if command_type in ['M3', 'M4', 'M5']:
+                            laser_commands_found.append(line)
+                            logger.info(f"[SVG_TO_GCODE] Laser command found: {line}")
+                        else:
+                            logger.debug(f"[SVG_TO_GCODE] M-command found: {line}")
+                    elif command_type.startswith('G'):
+                        g_commands_found.add(command_type)
 
-                distance = ((x_val - current_x) ** 2 + (y_val - current_y) ** 2 + (z_val - current_z) ** 2) ** 0.5
+                    if command_type in ['G90']:
+                        grbl.set_mode_absolute(grbl_ser)
+                        commands_sent += 1
+                        continue
+                    elif command_type in ['G91']:
+                        logger.warning("Relative mode (G91) detected in G-code, but absolute mode is required. Skipping.")
+                        continue
+                    elif command_type.startswith('M'):
+                        if not laser_on and command_type in ['M3', 'M4']:
+                            logger.debug(f"[SVG_TO_GCODE] Skipping {line} during cooling pass")
+                            continue
+                        logger.info(f"[SVG_TO_GCODE] Executing M-command: {line}")
+                        grbl_command = grbl_schemas.GrblCommandRequest(
+                            command=line,
+                            label="G-code M-command",
+                            retries=3,
+                            timeout=1.0
+                        )
+                        response = grbl.send_command(grbl_ser, grbl_command)
+                        if not response.success:
+                            logger.warning(f"[SVG_TO_GCODE] M-command {line} failed: {response.response}")
+                        else:
+                            logger.info(f"[SVG_TO_GCODE] M-command {line} executed successfully")
+                        commands_sent += 1
+                        continue
+                    elif command_type in ['G92', 'G28', 'G30']:
+                        logger.debug(f"[SVG_TO_GCODE] Executing G-command: {line}")
+                        grbl_command = grbl_schemas.GrblCommandRequest(
+                            command=line,
+                            label="G-code command",
+                            retries=3,
+                            timeout=1.0
+                        )
+                        response = grbl.send_command(grbl_ser, grbl_command)
+                        if not response.success:
+                            logger.warning(f"[SVG_TO_GCODE] Command {line} failed: {response.response}")
+                        commands_sent += 1
+                        continue
+                    elif command_type == 'G0' or command_type == 'G1':
+                        x_val = None
+                        y_val = None
+                        z_val = None
+                        feed_val = None
 
-                grbl.move_absolute(
-                    grbl_ser,
-                    x=x_val,
-                    y=y_val,
-                    z=z_val,
-                    feed=feed_to_use,
-                    invert_y=True
-                )
+                        for part in parts[1:]:
+                            if part.startswith('X'):
+                                raw_x = float(part[1:].rstrip(';'))
+                                x_val = (raw_x - raw_center_x) + target_center_x
+                            elif part.startswith('Y'):
+                                raw_y = float(part[1:].rstrip(';'))
+                                y_val = (raw_y - raw_center_y) + target_center_y
+                            elif part.startswith('Z'):
+                                z_val = float(part[1:].rstrip(';'))
+                            elif part.startswith('F'):
+                                feed_val = int(float(part[1:].rstrip(';')))
 
-                if distance > 0:
-                    move_time = (distance / feed_to_use) * 60.0 + 0.1
-                    time.sleep(move_time)
-                    grbl_ser.read_all()
+                        if x_val is None and y_val is None and z_val is None:
+                            continue
 
-                current_x = x_val
-                current_y = y_val
-                current_z = z_val
-                commands_sent += 1
+                        if x_val is None:
+                            x_val = current_x
+                        if y_val is None:
+                            y_val = current_y
+                        if z_val is None:
+                            z_val = current_z
+
+                        if command_type == 'G0':
+                            feed_to_use = movement_feed
+                        else:
+                            feed_to_use = feed_val if feed_val is not None else feed
+                            if laser_on and x_cut_feed_scale != 1.0:
+                                dx_seg = abs(x_val - current_x)
+                                dy_seg = abs(y_val - current_y)
+                                if dx_seg > dy_seg and dx_seg > 1e-6:
+                                    feed_to_use = max(1, int(round(feed_to_use * x_cut_feed_scale)))
+
+                        distance = ((x_val - current_x) ** 2 + (y_val - current_y) ** 2 + (z_val - current_z) ** 2) ** 0.5
+
+                        grbl.move_absolute(
+                            grbl_ser,
+                            x=x_val,
+                            y=y_val,
+                            z=z_val,
+                            feed=feed_to_use,
+                            invert_y=True
+                        )
+
+                        if distance > 0:
+                            move_time = (distance / feed_to_use) * 60.0 + 0.1
+                            time.sleep(move_time)
+                            grbl_ser.read_all()
+
+                        current_x = x_val
+                        current_y = y_val
+                        current_z = z_val
+                        commands_sent += 1
+
+                phase_index += 1
 
         logger.info(f"[SVG_TO_GCODE] Summary - G-commands found: {sorted(g_commands_found)}")
         logger.info(f"[SVG_TO_GCODE] Summary - M-commands found: {sorted(m_commands_found)}")
@@ -282,7 +348,10 @@ async def svg_to_gcode_endpoint(
 
         return SvgToGcodeResponse(
             status="success",
-            message=f"SVG converted and executed successfully. {commands_sent} commands sent.",
+            message=(
+                f"SVG converted and executed successfully ({passes} cut + {passes * cooling_passes} cooling pass(es), "
+                f"{passes * phases_per_cycle} path runs). {commands_sent} commands sent."
+            ),
             commands_sent=commands_sent,
             final_position_x=final_pos.x,
             final_position_y=final_pos.y,
@@ -295,6 +364,80 @@ async def svg_to_gcode_endpoint(
         logger.error(f"SVG to G-code conversion failed: {e}")
         raise HTTPException(status_code=500, detail=f"SVG to G-code conversion failed: {str(e)}")
 
+async def zap_endpoint(
+    laser_power: int = Form(1000, description="Laser power level (0-1000, default: 1000)"),
+    grbl_connection: grbl_schemas.GrblConnection = Depends(utils.get_grbl_connection)
+) -> ZapResponse:
+    """
+    Turn the laser on for 0.2 seconds at the current position without moving.
+    Creates a small mark to indicate the starting position.
+
+    Args:
+        laser_power: Laser power level from 0-1000 (default: 1000, maximum power)
+        grbl_connection: GRBL connection with cached settings
+
+    Returns:
+        ZapResponse with status and current position
+
+    Raises:
+        HTTPException: 400 if laser_power is invalid, 500 if zap fails
+    """
+    if laser_power < 0 or laser_power > 1000:
+        raise HTTPException(status_code=400, detail="laser_power must be between 0 and 1000")
+
+    grbl_ser = grbl_connection.serial
+
+    try:
+        current_pos = grbl.query_position(grbl_ser)
+        if current_pos.x is None or current_pos.y is None:
+            raise HTTPException(status_code=500, detail="Unable to query current work position")
+
+        laser_on_command = grbl_schemas.GrblCommandRequest(
+            command=f"M3 S{laser_power}",
+            label="Laser on",
+            retries=3,
+            timeout=1.0
+        )
+        response = grbl.send_command(grbl_ser, laser_on_command)
+        if not response.success:
+            raise HTTPException(status_code=500, detail=f"Failed to turn laser on: {response.response}")
+
+        dwell_command = grbl_schemas.GrblCommandRequest(
+            command="G4 P0.2",
+            label="Dwell 0.2 seconds",
+            retries=3,
+            timeout=1.0
+        )
+        response = grbl.send_command(grbl_ser, dwell_command)
+        if not response.success:
+            logger.warning(f"Dwell command failed: {response.response}")
+
+        laser_off_command = grbl_schemas.GrblCommandRequest(
+            command="M5",
+            label="Laser off",
+            retries=3,
+            timeout=1.0
+        )
+        response = grbl.send_command(grbl_ser, laser_off_command)
+        if not response.success:
+            raise HTTPException(status_code=500, detail=f"Failed to turn laser off: {response.response}")
+
+        final_pos = grbl.query_position(grbl_ser)
+
+        return ZapResponse(
+            status="success",
+            message="Laser zap completed successfully",
+            position_x=final_pos.x,
+            position_y=final_pos.y,
+            position_z=final_pos.z
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Laser zap failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Laser zap failed: {str(e)}")
+
 def factory(app: fastapi.FastAPI) -> APIRouter:
     """
     Create and configure the operations API router with SVG to G-code endpoints.
@@ -304,7 +447,8 @@ def factory(app: fastapi.FastAPI) -> APIRouter:
 
     Returns:
         Configured APIRouter with operations endpoints:
-        - POST /operations/svg-to-gcode - Convert SVG file to G-code and execute on machine
+        - POST /operations/svg-to-gcode - Convert SVG file to G-code and execute on machine (optional passes)
+        - POST /operations/zap - Turn laser on for 0.2 seconds at current position
     """
     router = APIRouter(prefix="/operations", tags=["operations"])
 
@@ -313,6 +457,13 @@ def factory(app: fastapi.FastAPI) -> APIRouter:
         svg_to_gcode_endpoint,
         methods=["POST"],
         response_model=SvgToGcodeResponse
+    )
+
+    router.add_api_route(
+        "/zap",
+        zap_endpoint,
+        methods=["POST"],
+        response_model=ZapResponse
     )
 
     return router
