@@ -1,7 +1,6 @@
 import os
 import re
 import tempfile
-import time
 
 import fastapi
 from fastapi import APIRouter
@@ -160,12 +159,16 @@ async def svg_to_gcode_endpoint(
         target_center_x = raw_center_x + origin_x
         target_center_y = raw_center_y + origin_y
 
-        grbl.move_absolute(grbl_ser, x=target_center_x, y=target_center_y, feed=movement_feed, invert_y=True)
-        distance_to_center = ((target_center_x - current_pos.x) ** 2 + (target_center_y - current_pos.y) ** 2) ** 0.5
-        if distance_to_center > 0:
-            move_time = (distance_to_center / movement_feed) * 60.0 + 0.5
-            time.sleep(move_time)
-            grbl_ser.read_all()
+        center_move = grbl.move_absolute_wait_ok(
+            grbl_ser,
+            x=target_center_x,
+            y=target_center_y,
+            feed=movement_feed,
+            invert_y=True,
+            motion="G1",
+        )
+        if not center_move.success:
+            logger.warning(f"[SVG_TO_GCODE] Move to job center failed: {center_move.response}")
 
         commands_sent = 0
         current_x = target_center_x
@@ -307,21 +310,20 @@ async def svg_to_gcode_endpoint(
                                 if dx_seg > dy_seg and dx_seg > 1e-6:
                                     feed_to_use = max(1, int(round(feed_to_use * x_cut_feed_scale)))
 
-                        distance = ((x_val - current_x) ** 2 + (y_val - current_y) ** 2 + (z_val - current_z) ** 2) ** 0.5
-
-                        grbl.move_absolute(
+                        motion = "G0" if command_type == "G0" else "G1"
+                        move_resp = grbl.move_absolute_wait_ok(
                             grbl_ser,
                             x=x_val,
                             y=y_val,
                             z=z_val,
                             feed=feed_to_use,
-                            invert_y=True
+                            invert_y=True,
+                            motion=motion,
                         )
-
-                        if distance > 0:
-                            move_time = (distance / feed_to_use) * 60.0 + 0.1
-                            time.sleep(move_time)
-                            grbl_ser.read_all()
+                        if not move_resp.success:
+                            logger.warning(
+                                f"[SVG_TO_GCODE] Move {motion} failed: {move_resp.response}"
+                            )
 
                         current_x = x_val
                         current_y = y_val
@@ -337,12 +339,11 @@ async def svg_to_gcode_endpoint(
         else:
             logger.warning(f"[SVG_TO_GCODE] Summary - No laser on/off commands (M3/M4/M5) found in G-code")
 
-        grbl.move_absolute(grbl_ser, x=0.0, y=0.0, feed=movement_feed, invert_y=True)
-        distance_to_home = ((current_x) ** 2 + (current_y) ** 2) ** 0.5
-        if distance_to_home > 0:
-            move_time = (distance_to_home / movement_feed) * 60.0 + 0.5
-            time.sleep(move_time)
-            grbl_ser.read_all()
+        home_move = grbl.move_absolute_wait_ok(
+            grbl_ser, x=0.0, y=0.0, feed=movement_feed, invert_y=True, motion="G1"
+        )
+        if not home_move.success:
+            logger.warning(f"[SVG_TO_GCODE] Return home failed: {home_move.response}")
 
         final_pos = grbl.query_position(grbl_ser)
 

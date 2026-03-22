@@ -125,6 +125,85 @@ def send_command(ser: serial.Serial, request: grbl_schemas.GrblCommandRequest) -
         attempts=attempts
     )
 
+def estimated_move_duration_seconds(
+    distance_mm: float,
+    feed_mm_per_min: float,
+    *,
+    relative_margin: float = 0.06,
+    min_extra_seconds: float = 0.004,
+) -> float:
+    """
+    Estimated time for a linear move at the given feed.
+
+    Used when pacing serial sends with time.sleep (e.g. homing/calibration sequences).
+    Prefer :func:`move_absolute_wait_ok` for normal jobs so pacing follows GRBL ``ok``.
+    """
+    if distance_mm <= 0 or feed_mm_per_min <= 0:
+        return min_extra_seconds
+    base = (distance_mm / feed_mm_per_min) * 60.0
+    return max(base * (1.0 + relative_margin), base + min_extra_seconds)
+
+def format_absolute_move_line(
+    x: float | None = None,
+    y: float | None = None,
+    z: float | None = None,
+    feed: int | None = None,
+    invert_y: bool = True,
+    motion: str = "G1",
+) -> str:
+    """
+    Build an absolute G0/G1 line (no newline), including Y→Z duplication for dual Y.
+
+    Args:
+        motion: ``G0`` (rapid) or ``G1`` (linear). Invalid values default to ``G1``.
+    """
+    m = motion.upper()
+    if m not in ("G0", "G1"):
+        m = "G1"
+    parts: list[str] = [m]
+    if x is not None:
+        parts.append(f"X{x}")
+    if y is not None:
+        y_value = -y if invert_y else y
+        logger.info(f"[MOVE_ABSOLUTE] Input Y: {y}, invert_y: {invert_y}, output Y: {y_value}")
+        parts.append(f"Y{y_value}")
+        parts.append(f"Z{y_value}")
+    elif z is not None:
+        z_value = -z if invert_y else z
+        parts.append(f"Z{z_value}")
+    if feed is not None:
+        parts.append(f"F{feed}")
+    return " ".join(parts)
+
+def move_absolute_wait_ok(
+    ser: serial.Serial,
+    x: float | None = None,
+    y: float | None = None,
+    z: float | None = None,
+    feed: int | None = None,
+    invert_y: bool = True,
+    motion: str = "G1",
+    timeout: float = 30.0,
+) -> grbl_schemas.GrblCommandResponse:
+    """
+    Send an absolute move and wait until GRBL returns ``ok`` (line accepted).
+
+    Note: ``ok`` means the move was parsed and queued, not necessarily that motion has
+    finished; that is the standard GRBL streaming contract and avoids artificial dwell
+    from ``time.sleep`` estimates on short segments.
+    """
+    line = format_absolute_move_line(
+        x=x, y=y, z=z, feed=feed, invert_y=invert_y, motion=motion
+    )
+    logger.info(f"[MOVE_ABSOLUTE] Sending command (wait ok): {line}")
+    request = grbl_schemas.GrblCommandRequest(
+        command=line,
+        label=f"G-code {motion.upper()} move",
+        retries=3,
+        timeout=timeout,
+    )
+    return send_command(ser, request)
+
 def send_raw_command(ser: serial.Serial, command: bytes, wait_time: float = 0.2) -> None:
     """
     Send a raw byte command to GRBL without waiting for response.
@@ -182,9 +261,9 @@ def move_relative(ser: serial.Serial, x: float | None = None, y: float | None = 
     command = " ".join(parts) + "\n"
     ser.write(command.encode())
 
-def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None, invert_y: bool = True) -> None:
+def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None, invert_y: bool = True, motion: str = "G1") -> None:
     """
-    Send absolute movement command (G1 in absolute mode).
+    Send absolute movement command (G0/G1 in absolute mode).
     Automatically duplicates Y value to Z for dual motor Y axis configuration.
     Inverts Y coordinates by default to account for machine coordinate system after calibration.
 
@@ -196,23 +275,13 @@ def move_absolute(ser: serial.Serial, x: float | None = None, y: float | None = 
         feed: Feed rate in mm/min
         invert_y: If True, inverts Y coordinate for post-calibration movements (default: True).
                   Set to False during calibration to use raw machine coordinates.
+        motion: ``G0`` or ``G1`` (default ``G1``).
     """
-    parts = ["G1"]
-    if x is not None:
-        parts.append(f"X{x}")
-    if y is not None:
-        y_value = -y if invert_y else y
-        logger.info(f"[MOVE_ABSOLUTE] Input Y: {y}, invert_y: {invert_y}, output Y: {y_value}")
-        parts.append(f"Y{y_value}")
-        parts.append(f"Z{y_value}")
-    elif z is not None:
-        z_value = -z if invert_y else z
-        parts.append(f"Z{z_value}")
-    if feed is not None:
-        parts.append(f"F{feed}")
-    command = " ".join(parts) + "\n"
-    logger.info(f"[MOVE_ABSOLUTE] Sending command: {command.strip()}")
-    ser.write(command.encode())
+    line = format_absolute_move_line(
+        x=x, y=y, z=z, feed=feed, invert_y=invert_y, motion=motion
+    )
+    logger.info(f"[MOVE_ABSOLUTE] Sending command: {line}")
+    ser.write((line + "\n").encode())
 
 def move_absolute_machine_coords(ser: serial.Serial, x: float | None = None, y: float | None = None, z: float | None = None, feed: int | None = None, invert_y: bool = True) -> None:
     """
